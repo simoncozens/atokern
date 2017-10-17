@@ -4,6 +4,8 @@ import pickle
 import sys
 import os.path
 import glob
+import random
+from math import copysign
 
 from keras.layers import Input, Embedding, LSTM, Dense
 from keras.models import Model
@@ -22,24 +24,43 @@ print("Building network")
 # Input and output
 l_input = Input(shape=(n_l_inputs,), dtype='float32', name='left')
 lshape = Dense(64, activation='relu')(l_input)
-lshape = Dense(32, activation='relu')(lshape)
 r_input = Input(shape=(n_r_inputs,), dtype='float32', name='right')
 rshape = Dense(64, activation='relu')(r_input)
-rshape = Dense(32, activation='relu')(rshape)
 
-x = keras.layers.concatenate([lshape, rshape])
+n_left_input = Input(shape=(samples,), dtype='float32', name='left_n')
+n_right_input = Input(shape=(samples,), dtype='float32', name='right_n')
+nlshape = Dense(64, activation='relu')(n_left_input)
+nrshape = Dense(64, activation='relu')(n_right_input)
+
+o_left_input = Input(shape=(samples,), dtype='float32', name='left_o')
+o_right_input = Input(shape=(samples,), dtype='float32', name='right_o')
+olshape = Dense(64, activation='relu')(o_left_input)
+orshape = Dense(64, activation='relu')(o_right_input)
+
+x = keras.layers.concatenate([lshape, rshape, nlshape, nrshape, olshape, orshape])
 x = Dense(64, activation='relu')(x)
 x = Dense(16, activation='relu')(x)
 
-kernvalue =  Dense(1, activation='linear', name='kernvalue')(x)
+kern_bins = 7
 
-model = Model(inputs=[l_input, r_input], outputs=[kernvalue])
+kernvalue =  Dense(kern_bins, activation='softmax')(x)
+
+def bin_kern(value):
+  if value < -20: return 1
+  if value < -10: return 2
+  if value < 0: return 3
+  if value == 0: return 4
+  if value > 0: return 5
+  if value > 10: return 6
+  if value > 20: return 7
+
+model = Model(inputs=[l_input, r_input, n_left_input, n_right_input, o_left_input, o_right_input], outputs=[kernvalue])
 print("Compiling network")
 
 opt = keras.optimizers.adam()
 # opt = keras.optimizers.SGD(lr=0.0001, clipnorm=1.)
 
-model.compile(loss='mean_squared_error',
+model.compile(loss='categorical_crossentropy',
               optimizer=opt,
               metrics=['accuracy'])
 
@@ -158,10 +179,9 @@ def glyph_to_sb(face, data, which="L"):
   return newsb
 
 # Trains the NN given a font and its associated kern dump
-def do_a_font(path, kerndump):
+def do_a_font(path, kerndump, epoch):
   face = freetype.Face(path)
   face.set_char_size( 64*face.units_per_EM)
-  global epoch
   loutlines = dict()
   routlines = dict()
   kernpairs = dict()
@@ -195,38 +215,45 @@ def do_a_font(path, kerndump):
     obj = {"loutlines": loutlines, "routlines": routlines, "kerndata": kernpairs}
     pickle.dump(obj, open(path+".pickle","wb"))
 
-  def get_batch(left):
-    left_batch = []
-    right_batch = []
-    kern_batch = []
-    for right in safe_glyphs:
-      # Get the right outline of the left glyph and vice versa
-      left_batch.append(routlines[left])
-      right_batch.append(loutlines[right])
-      kern_batch.append(kernpairs[left][right] / face.max_advance_width)
-      # Generate more data by shrinking the sidebearings and
-      # correspondingly expanding the kern value
-      for shuffle in range(-10,10):
-        left_batch.append(routlines[left]-shuffle)
-        right_batch.append(loutlines[right])
-        kern_batch.append(kernpairs[left][right]+shuffle  / face.max_advance_width)
+  left_input = []
+  right_input = []
+  kern_input = []
+  o_left_input = []
+  o_right_input = []
+  n_left_input = []
+  n_right_input = []
 
-        left_batch.append(routlines[left])
-        right_batch.append(loutlines[right]-shuffle)
-        kern_batch.append(kernpairs[left][right]+shuffle  / face.max_advance_width)
-
-    return np.array(left_batch), np.array(right_batch), np.array(kern_batch)
-
-  # Train!
   for left in safe_glyphs:
-    epoch = epoch + 1
-    left_batch, right_batch, kern_batch = get_batch(left)
-    loss = model.train_on_batch([left_batch, right_batch], [kern_batch])
-    print(left, "Epoch", epoch, model.metrics_names[0], "=", loss[0], "-", model.metrics_names[1], "=", loss[1])
+    for right in safe_glyphs:
+      left_input.append(routlines[left])
+      right_input.append(loutlines[right])
+      o_left_input.append(loutlines["o"])
+      o_right_input.append(routlines["o"])
+      n_left_input.append(loutlines["n"])
+      n_right_input.append(routlines["n"])
+      kern_input.append(bin_kern(kernpairs[left][right]))
 
-for i in glob.glob("./kern-dump/*.otf"):
-  print(i, end=" ")
-  do_a_font(i,i+".kerndump")
+  kerncats = keras.utils.to_categorical(kern_input, num_classes=kern_bins)
+
+  model.fit({
+    "left":  np.array(left_input),
+    "right": np.array(right_input),
+    "left_n": np.array(n_left_input),
+    "right_n": np.array(n_right_input),
+    "left_o": np.array(o_left_input),
+    "right_o": np.array(o_right_input)
+    }, kerncats,
+    batch_size=32, epochs=2, verbose=1, callbacks=None,
+    validation_split=0.2, initial_epoch=0)
+
+files = glob.glob("./kern-dump/*.*tf")
+epochn = 0
+for _ in range(50):
+  random.shuffle(files)
+  for i in files:
+    print(i)
+    epochn = epochn + 5
+    do_a_font(i,i+".kerndump", epochn)
 
   # face = freetype.Face(i)
   # face.set_char_size( 64 *face.units_per_EM )
