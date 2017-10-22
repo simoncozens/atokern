@@ -1,0 +1,149 @@
+import freetype
+import numpy as np
+import pickle
+import os.path
+
+safe_glyphs = set([
+  "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
+  "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+  "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
+  "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+   "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "zero", 
+   "period", "comma", "colon"])
+
+def unpack_mono_bitmap(bitmap):
+  data = bytearray(bitmap.rows * bitmap.width)
+  buff = bitmap._get_buffer()
+  for y in range(bitmap.rows):
+    for byte_index in range(bitmap.pitch):
+      byte_value = buff[y * bitmap.pitch + byte_index]
+      num_bits_done = byte_index * 8
+      rowstart = y * bitmap.width + byte_index * 8
+      for bit_index in range(min(8, bitmap.width - num_bits_done)):
+        bit = byte_value & (1 << (7 - bit_index))
+        data[rowstart + bit_index] = 1 if bit else 0
+  return data
+
+def bbox(outline):
+  start, end = 0, 0
+  VERTS = []
+  # Iterate over each contour
+  for i in range(len(outline.contours)):
+      end    = outline.contours[i]
+      points = outline.points[start:end+1]
+      points.append(points[0])
+      tags   = outline.tags[start:end+1]
+      tags.append(tags[0])
+      segments = [ [points[0],], ]
+      for j in range(1, len(points) ):
+          segments[-1].append(points[j])
+          if tags[j] & (1 << 0) and j < (len(points)-1):
+              segments.append( [points[j],] )
+      verts = [points[0], ]
+      for segment in segments:
+          if len(segment) == 2:
+              verts.extend(segment[1:])
+          elif len(segment) == 3:
+              verts.extend(segment[1:])
+          else:
+              verts.append(segment[1])
+              for i in range(1,len(segment)-2):
+                  A,B = segment[i], segment[i+1]
+                  C = ((A[0]+B[0])/2.0, (A[1]+B[1])/2.0)
+                  verts.extend([ C, B ])
+              verts.append(segment[-1])
+      VERTS.extend(verts)
+      start = end+1
+  VERTS = np.array(VERTS)
+  x,y = VERTS[:,0], VERTS[:,1]
+  VERTS[:,0], VERTS[:,1] = x, y
+
+  xmin, xmax = x.min() /64, x.max() /64
+  ymin, ymax = y.min() /64, y.max()/64
+  return (xmin, xmax, ymin,ymax)
+
+# Turn a glyph into a tensor of boundary samples
+def glyph_to_sb(face, data, which="L"):
+  glyph = face.glyph
+  sb = []
+  w, h = glyph.bitmap.width, glyph.bitmap.rows
+  ascender = face.ascender
+  lsb = glyph.metrics.horiBearingX / 64.0
+  rsb = glyph.metrics.horiAdvance / 64.0 - (w + glyph.metrics.horiBearingX / 64.0)
+  # print("Width: ", w)
+  # print("Height: ", h)
+  # print("LSB: ", lsb)
+  # print("RSB: ", rsb)
+  # print("Ascender", ascender)
+  # print("Bearing Y", glyph.metrics.horiBearingY / 64.0)
+  # print("Bbox", bbox(glyph.outline))
+  (xmin, xmax, ymin,ymax) = bbox(glyph.outline)
+  if which == "L":
+    iterx = range(w)
+    last = w-1
+    const = rsb
+  else:
+    iterx = range(w-1,-1,-1)
+    last = 0
+    const = lsb
+
+  for _ in range(ascender-int(glyph.metrics.horiBearingY / 64.0)):
+    sb.append(int(const+w))
+
+  for y in range(-int(ymin),h):
+    for x in iterx:
+      y2 = int(ymin)+y
+      if data[w*y2+x] == 1 or x==last:
+        if which == "L":
+          sb.append(int(const+x))
+        else:
+          sb.append(int(const+(w-x)))
+        break
+
+  newsb = []
+  i = 0
+  for i in range(samples):
+    sliceval = int(i*len(sb) / samples)
+    newsb.append(sb[sliceval] / w)
+  return newsb
+
+def loadglyph(face, g):
+  glyphindex = face.get_name_index(g.encode("utf8"))
+  if glyphindex:
+    face.load_glyph(glyphindex, freetype.FT_LOAD_RENDER |
+                              freetype.FT_LOAD_TARGET_MONO)
+    data = unpack_mono_bitmap(face.glyph.bitmap)
+    return np.array(glyph_to_sb(face, data, which="L")), np.array(glyph_to_sb(face, data, which="R"))
+
+def loadfont(path, kerndump):
+  face = freetype.Face(path)
+  face.set_char_size( 64*500 )
+  loutlines = dict()
+  routlines = dict()
+  kernpairs = dict()
+
+  def load_kernpairs(file):
+    with open(file) as f:
+      for line in f:
+        l,r,k = line.split()
+        if not l in kernpairs:
+          kernpairs[l] = dict()
+        kernpairs[l][r] = int(k)
+
+  if os.path.isfile(path+".pickle"):
+    obj = pickle.load(open(path+".pickle","rb"))
+    loutlines, routlines, kernpairs = obj["loutlines"], obj["routlines"], obj["kerndata"]
+  else:
+    for l in safe_glyphs:
+      kernpairs[l]=dict()
+      for r in safe_glyphs:
+        kernpairs[l][r] = 0
+
+    load_kernpairs(kerndump)
+    for g in safe_glyphs:
+      loutlines[g], routlines[g] = loadGlyph(face, g)
+
+    obj = {"loutlines": loutlines, "routlines": routlines, "kerndata": kernpairs}
+    pickle.dump(obj, open(path+".pickle","wb"))
+
+  return loutlines, routlines, kernpairs
