@@ -2,6 +2,7 @@ import freetype
 import numpy as np
 import pickle
 import os.path
+import sys
 
 safe_glyphs = set([
   "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
@@ -9,7 +10,10 @@ safe_glyphs = set([
   "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
   "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "zero", 
-   "period", "comma", "colon"])
+   "period", "comma", "colon"
+   ])
+
+samples = 100
 
 def unpack_mono_bitmap(bitmap):
   data = bytearray(bitmap.rows * bitmap.width)
@@ -58,8 +62,8 @@ def bbox(outline):
   x,y = VERTS[:,0], VERTS[:,1]
   VERTS[:,0], VERTS[:,1] = x, y
 
-  xmin, xmax = x.min() /64, x.max() /64
-  ymin, ymax = y.min() /64, y.max()/64
+  xmin, xmax = x.min() / 64, x.max() /64
+  ymin, ymax = y.min() / 64, y.max() / 64
   return (xmin, xmax, ymin,ymax)
 
 # Turn a glyph into a tensor of boundary samples
@@ -68,26 +72,26 @@ def glyph_to_sb(face, data, which="L"):
   sb = []
   w, h = glyph.bitmap.width, glyph.bitmap.rows
   ascender = face.ascender
-  lsb = glyph.metrics.horiBearingX / 64.0
-  rsb = glyph.metrics.horiAdvance / 64.0 - (w + glyph.metrics.horiBearingX / 64.0)
+  lsb = int(glyph.metrics.horiBearingX / 64)
+  rsb = glyph.metrics.horiAdvance / 64 - (w + glyph.metrics.horiBearingX/64)
   # print("Width: ", w)
   # print("Height: ", h)
   # print("LSB: ", lsb)
   # print("RSB: ", rsb)
   # print("Ascender", ascender)
-  # print("Bearing Y", glyph.metrics.horiBearingY / 64.0)
+  # print("Bearing Y", glyph.metrics.horiBearingY / 64)
   # print("Bbox", bbox(glyph.outline))
   (xmin, xmax, ymin,ymax) = bbox(glyph.outline)
   if which == "L":
     iterx = range(w)
     last = w-1
-    const = rsb
+    const = lsb
   else:
     iterx = range(w-1,-1,-1)
     last = 0
-    const = lsb
+    const = rsb
 
-  for _ in range(ascender-int(glyph.metrics.horiBearingY / 64.0)):
+  for _ in range(ascender-int(glyph.metrics.horiBearingY / 64)):
     sb.append(int(const+w))
 
   for y in range(-int(ymin),h):
@@ -104,7 +108,7 @@ def glyph_to_sb(face, data, which="L"):
   i = 0
   for i in range(samples):
     sliceval = int(i*len(sb) / samples)
-    newsb.append(sb[sliceval] / w)
+    newsb.append(sb[sliceval])
   return newsb
 
 def loadglyph(face, g):
@@ -117,7 +121,7 @@ def loadglyph(face, g):
 
 def loadfont(path, kerndump):
   face = freetype.Face(path)
-  face.set_char_size( 64*500 )
+  face.set_char_size( 64 * face.units_per_EM )
   loutlines = dict()
   routlines = dict()
   kernpairs = dict()
@@ -141,9 +145,15 @@ def loadfont(path, kerndump):
 
     load_kernpairs(kerndump)
     for g in safe_glyphs:
-      loutlines[g], routlines[g] = loadGlyph(face, g)
-
+      print(g+ " ", end='',flush=True)
+      loutlines[g], routlines[g] = loadglyph(face, g)
+    print("")
     obj = {"loutlines": loutlines, "routlines": routlines, "kerndata": kernpairs}
     pickle.dump(obj, open(path+".pickle","wb"))
 
   return loutlines, routlines, kernpairs
+
+if __name__ == '__main__':
+  for n in sys.argv[1::]:
+    print(n+": ", end="")
+    loadfont(n, n + ".kerndump")
