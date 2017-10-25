@@ -144,6 +144,12 @@ def do_a_font(path, kerndump, epoch):
         for w in range(-2,2):
           add_entry(left,right,w)
 
+  for left in lower:
+    for right in lower:
+      if kernpairs[left][right] != 0 or random.random() < zero_supression:
+        for w in range(-2,2):
+          add_entry(left,right,w)
+
 files = glob.glob("./kern-dump/Sou*egular.?tf")
 epochn = 0
 for i in files:
@@ -159,7 +165,7 @@ for n in input_names:
   input_tensors[n] = np.array(input_tensors[n])
 
 history = model.fit(input_tensors, kern_input,
-  batch_size=8, epochs=200, verbose=1, callbacks=[
+  batch_size=1, epochs=200, verbose=1, callbacks=[
   earlystop
   # checkpointer
 ],shuffle = True,
