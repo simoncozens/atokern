@@ -108,7 +108,9 @@ checkpointer = keras.callbacks.ModelCheckpoint(filepath='kernmodel.hdf5', verbos
 earlystop = keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.001, patience=50, verbose=1, mode='auto')
 kern_input = []
 input_tensors = {}
-safe_glyphs = [i for i in string.ascii_uppercase]
+upper = [i for i in string.ascii_uppercase]
+lower = [i for i in string.ascii_lowercase]
+
 def do_a_font(path, kerndump, epoch):
   loutlines, routlines, kernpairs = loadfont(path,kerndump)
   mwidth = get_m_width(path)
@@ -121,14 +123,14 @@ def do_a_font(path, kerndump, epoch):
 
   def add_entry(left, right,wiggle):
     if "leftofl" in input_tensors:
-      input_tensors["leftofl"].append(leftcontour(left)+wiggle/mwidth)
+      input_tensors["leftofl"].append(leftcontour(left)/mwidth)
     if "rightofl" in input_tensors:
       input_tensors["rightofl"].append(rightcontour(left)+wiggle/mwidth)
 
     if "leftofr" in input_tensors:
       input_tensors["leftofr"].append(leftcontour(right)+wiggle/mwidth)
     if "rightofr" in input_tensors:
-      input_tensors["rightofr"].append(rightcontour(right)+wiggle/mwidth)
+      input_tensors["rightofr"].append(rightcontour(right)/mwidth)
 
     kern = (kernpairs[left][right]-2*wiggle)/mwidth
     if regress:
@@ -136,8 +138,8 @@ def do_a_font(path, kerndump, epoch):
     else:
       kern_input.append(binfunction(kern))
 
-  for left in safe_glyphs:
-    for right in safe_glyphs:
+  for left in upper:
+    for right in upper+lower:
       if kernpairs[left][right] != 0 or random.random() < zero_supression:
         for w in range(-2,2):
           add_entry(left,right,w)
