@@ -6,7 +6,7 @@ import h5py
 import numpy as np
 import math
 import string
-# from matplotlib import pyplot
+from matplotlib import pyplot
 
 from keras.layers import Input, Embedding, LSTM, Dense, Dropout
 from keras.models import Model
@@ -22,7 +22,7 @@ np.set_printoptions(precision=3, suppress=True)
 zero_supression = 0.3
 repeat_supression = 0.2
 
-def drop(x): return Dropout(0.1)(x)
+def drop(x): return Dropout(0.2)(x)
 def relu(x, layers=1, nodes=32):
   for _ in range(1,layers):
     x = Dense(nodes, activation='relu')(x)
@@ -40,10 +40,12 @@ nets = []
 for n in input_names:
   input_ = Input(shape=(samples,), dtype='float32', name=n)
   inputs.append(input_)
-  nets.append(relu(input_,layers=3,nodes=128))
+  # nets.append(relu(input_,layers=3,nodes=128))
+  nets.append(drop(input_))
 
 x = keras.layers.concatenate(nets)
-
+x = relu(x, layers=3,nodes=128)
+x = drop(x)
 def bin_kern3(value):
   if value < -5/800: return 0
   if value > 5/800: return 2
@@ -97,14 +99,15 @@ print("Compiling network")
 opt = keras.optimizers.adam()
 if regress:
   loss = 'mean_squared_error'
+  metrics = []
 else:
   loss = 'categorical_crossentropy'
-model.compile(loss=loss, metrics=['accuracy'],
-              optimizer=opt)
+  metrics = ['accuracy']
+model.compile(loss=loss, metrics=metrics, optimizer=opt)
 
 # Trains the NN given a font and its associated kern dump
 
-checkpointer = keras.callbacks.ModelCheckpoint(filepath='kernmodel.hdf5', verbose=1, save_best_only=True)
+checkpointer = keras.callbacks.ModelCheckpoint(filepath='kernmodel.hdf5', verbose=0, save_best_only=True)
 earlystop = keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.001, patience=50, verbose=1, mode='auto')
 kern_input = []
 input_tensors = {}
@@ -165,14 +168,14 @@ for n in input_names:
   input_tensors[n] = np.array(input_tensors[n])
 
 history = model.fit(input_tensors, kern_input,
-  batch_size=1, epochs=200, verbose=1, callbacks=[
-  earlystop
-  # checkpointer
+  batch_size=8, epochs=200, verbose=1, callbacks=[
+  earlystop,
+  checkpointer
 ],shuffle = True,
   validation_split=0.2, initial_epoch=0)
 
 
 
-# pyplot.plot(history.history['acc'])
-# pyplot.show()
+pyplot.plot(history.history['val_loss'])
+pyplot.show()
 
