@@ -40,7 +40,7 @@ nets = []
 for n in input_names:
   input_ = Input(shape=(samples,), dtype='float32', name=n)
   inputs.append(input_)
-  nets.append(relu(input_,layers=5))
+  nets.append(relu(input_,layers=3,nodes=128))
 
 x = keras.layers.concatenate(nets)
 
