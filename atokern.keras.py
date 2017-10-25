@@ -4,6 +4,8 @@ import glob
 import random
 import h5py
 import numpy as np
+import math
+import string
 # from matplotlib import pyplot
 
 from keras.layers import Input, Embedding, LSTM, Dense, Dropout
@@ -12,117 +14,149 @@ from keras.constraints import maxnorm
 import keras
 
 import freetype
-from sidebearings import safe_glyphs, loadfont, samples
+from sidebearings import safe_glyphs, loadfont, samples, get_m_width
 epoch = 0
+np.set_printoptions(precision=3, suppress=True)
 
-# Hyperparameters. These are all guesses. (Samples should be OK.)
-zero_supression = 0.9
+# Hyperparameters. These are all guesses.
+zero_supression = 0.1
+repeat_supression = 0.2
 
-def drop(x): return Dropout(0.2)(x)
-def relu(x, layers=1):
+def drop(x): return Dropout(0.1)(x)
+def relu(x, layers=1, nodes=32):
   for _ in range(1,layers):
-    x = Dense(512, activation='relu')(x)
+    x = Dense(nodes, activation='relu')(x)
   return x
+
+regress = False
+threeway = True
 
 # Design the network:
 print("Building network")
-contour_input = Input(shape=(samples,), dtype='float32', name='contour')
-contour_shape = relu(drop(contour_input), layers=5)
+input_names = ["rightofl", "leftofr"]
+inputs = []
+nets = []
 
-nn_input = Input(shape=(samples,), dtype='float32', name='nn')
-nn_shape = relu(drop(nn_input), layers=5)
+for n in input_names:
+  input_ = Input(shape=(samples,), dtype='float32', name=n)
+  inputs.append(input_)
+  nets.append(relu(input_))
 
-oo_input = Input(shape=(samples,), dtype='float32', name='oo')
-oo_shape = relu(drop(oo_input), layers=5)
+x = keras.layers.concatenate(nets)
 
-nR_input = Input(shape=(samples,), dtype='float32', name='nR')
-nR_shape = relu(drop(oo_input), layers=5)
-
-Ln_input = Input(shape=(samples,), dtype='float32', name='Ln')
-Ln_shape = relu(drop(oo_input), layers=5)
-
-x = keras.layers.concatenate([contour_shape, nn_shape, oo_shape,nR_shape, Ln_shape])
-# x=contour_shape
-x = drop(relu(x, layers=2))
-x = Dense(512, activation="relu")(x)
-kern_bins = 9
-
-kernvalue =  Dense(kern_bins, activation='softmax')(x)
+def bin_kern3(value):
+  if value < -5/800: return 0
+  if value > 5/800: return 2
+  return 1
 
 def bin_kern(value):
-  if value < -50: return 0
-  if value < -20: return 1
-  if value < -10: return 2
-  if value < 0: return 3
-  if value == 0: return 4
-  if value > 0: return 5
-  if value > 10: return 6
-  if value > 20: return 7
-  if value > 50: return 8
+  rw = 800
+  if value < -150/rw: return 0
+  if value < -100/rw: return 1
+  if value < -70/rw: return 2
+  if value < -50/rw: return 3
+  if value < -45/rw: return 4
+  if value < -40/rw: return 5
+  if value < -35/rw: return 6
+  if value < -30/rw: return 7
+  if value < -25/rw: return 8
+  if value < -20/rw: return 9
+  if value < -15/rw: return 10
+  if value < -10/rw: return 11
+  if value < -5/rw: return 12
+  if value < 0: return 13
+  if value == 0: return 14
+  if value > 50/rw: return 25
+  if value > 45/rw: return 24
+  if value > 40/rw: return 23
+  if value > 35/rw: return 22
+  if value > 30/rw: return 21
+  if value > 25/rw: return 20
+  if value > 20/rw: return 19
+  if value > 15/rw: return 18
+  if value > 10/rw: return 17
+  if value > 5/rw: return 16
+  if value > 0: return 15
 
-model = Model(inputs=[contour_input, nn_input, oo_input, nR_input, Ln_input], outputs=[kernvalue])
-# model = Model(inputs=[l_input, r_input], outputs=[kernvalue])
+if threeway:
+  kern_bins = 3
+  binfunction = bin_kern3
+else:
+  kern_bins = 26
+  binfunction = bin_kern
+
+if regress:
+  kernvalue = Dense(1, activation="linear")(x)
+else:
+  kernvalue =  Dense(kern_bins, activation='softmax')(x)
+
+model = Model(inputs=inputs, outputs=[kernvalue])
+
 print("Compiling network")
 
-opt = keras.optimizers.adam(lr=0.001)
-model.compile(loss='categorical_crossentropy',
-              optimizer=opt,
-              metrics=['accuracy'])
-
+opt = keras.optimizers.adam()
+if regress:
+  loss = 'mean_squared_error'
+else:
+  loss = 'categorical_crossentropy'
+model.compile(loss=loss, metrics=['accuracy'],
+              optimizer=opt)
 
 # Trains the NN given a font and its associated kern dump
-kern_input = []
-nn = []
-oo = []
-leftRight = []
-leftN = []
-nRight = []
 
+checkpointer = keras.callbacks.ModelCheckpoint(filepath='kernmodel.hdf5', verbose=1, save_best_only=True)
+earlystop = keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.001, patience=50, verbose=1, mode='auto')
+kern_input = []
+input_tensors = {}
+safe_glyphs = [i for i in string.ascii_uppercase]
 def do_a_font(path, kerndump, epoch):
   loutlines, routlines, kernpairs = loadfont(path,kerndump)
-  face = freetype.Face(path)
-  face.set_char_size( 64 * face.units_per_EM )
-  n = face.get_name_index("n")
-  face.load_glyph(n, freetype.FT_LOAD_RENDER |
-                            freetype.FT_LOAD_TARGET_MONO)
-  nwidth = face.glyph.metrics.horiAdvance / 64
-  print("N width:", nwidth)
-  def contour_between(left, right):
-    return routlines[left] + routlines[right]
+  mwidth = get_m_width(path)
+  for n in input_names:
+    input_tensors[n] = []
+  def leftcontour(letter):
+    return np.array(loutlines[letter])/mwidth
+  def rightcontour(letter):
+    return np.array(routlines[letter])/mwidth
+
+  def add_entry(left, right):
+    input_tensors["rightofl"].append(rightcontour(left))
+    input_tensors["leftofr"].append(rightcontour(right))
+
+    kern = (kernpairs[left][right])/mwidth
+    if regress:
+      kern_input.append(kern)
+    else:
+      kern_input.append(binfunction(kern))
 
   for left in safe_glyphs:
     for right in safe_glyphs:
-      if kernpairs[left][right] != 0 or random.random() > zero_supression:
-        nn.append(contour_between('n','n') /nwidth)
-        oo.append(contour_between('o','o') / nwidth)
-        leftRight.append(contour_between(left, right) / nwidth)
-        kern_input.append(bin_kern(kernpairs[left][right]) / nwidth)
-        leftN.append(contour_between(left,'n') / nwidth)
-        nRight.append(contour_between('n',right) / nwidth)
+      print(left,right)
+      # if kernpairs[left][right] != 0 or True or random.random() < zero_supression:
+      add_entry(left,right)
 
-files = glob.glob("./kern-dump/*.?tf")
+files = glob.glob("./kern-dump/Sou*egular.?tf")
 epochn = 0
 for i in files:
   print(i)
   do_a_font(i,i+".kerndump", epochn)
 
-kerncats = keras.utils.to_categorical(kern_input, num_classes=kern_bins)
+if not regress:
+  kern_input = keras.utils.to_categorical(kern_input, num_classes=kern_bins)
+  print(kern_input.sum(axis=0))
+  print(kern_input.sum(axis=0).sum(axis=0))
 
-checkpointer = keras.callbacks.ModelCheckpoint(filepath='kernmodel.hdf5', verbose=1, save_best_only=True)
-earlystop = keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=20, verbose=1, mode='auto')
+for n in input_names:
+  input_tensors[n] = np.array(input_tensors[n])
 
-history = model.fit({
-  "nn": np.array(nn),
-  "oo": np.array(oo) ,
-  "contour": np.array(leftRight) ,
-  "nR": np.array(nRight),
-  "Ln": np.array(leftN)
-  }, kerncats,
+history = model.fit(input_tensors, kern_input,
   batch_size=32, epochs=2000, verbose=1, callbacks=[
   earlystop,
   checkpointer
 ],shuffle = True,
   validation_split=0.2, initial_epoch=0)
+
+
 
 # pyplot.plot(history.history['acc'])
 # pyplot.show()

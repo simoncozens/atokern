@@ -13,7 +13,7 @@ safe_glyphs = set([
    "period", "comma", "colon"
    ])
 
-samples = 100
+samples = 20
 
 def unpack_mono_bitmap(bitmap):
   data = bytearray(bitmap.rows * bitmap.width)
@@ -90,9 +90,13 @@ def glyph_to_sb(face, data, which="L"):
     iterx = range(w-1,-1,-1)
     last = 0
     const = rsb
-
+  # print("Which", which)
+  # print("const", const)
   for _ in range(ascender-int(glyph.metrics.horiBearingY / 64)):
-    sb.append(int(const+w))
+    sb.append(w)
+
+  if (ymin>0):
+    ymin = 0
 
   for y in range(-int(ymin),h):
     for x in iterx:
@@ -109,6 +113,7 @@ def glyph_to_sb(face, data, which="L"):
   for i in range(samples):
     sliceval = int(i*len(sb) / samples)
     newsb.append(sb[sliceval])
+  # print(newsb)
   return newsb
 
 def loadglyph(face, g):
@@ -117,6 +122,7 @@ def loadglyph(face, g):
     face.load_glyph(glyphindex, freetype.FT_LOAD_RENDER |
                               freetype.FT_LOAD_TARGET_MONO)
     data = unpack_mono_bitmap(face.glyph.bitmap)
+    print(g)
     return np.array(glyph_to_sb(face, data, which="L")), np.array(glyph_to_sb(face, data, which="R"))
 
 def loadfont(path, kerndump):
@@ -143,17 +149,43 @@ def loadfont(path, kerndump):
       for r in safe_glyphs:
         kernpairs[l][r] = 0
 
-    load_kernpairs(kerndump)
+    if kerndump:
+      load_kernpairs(kerndump)
     for g in safe_glyphs:
-      print(g+ " ", end='',flush=True)
+      # print(g+ " ", end='',flush=True)
       loutlines[g], routlines[g] = loadglyph(face, g)
-    print("")
+    # print("")
     obj = {"loutlines": loutlines, "routlines": routlines, "kerndata": kernpairs}
-    pickle.dump(obj, open(path+".pickle","wb"))
+    if kerndump:
+      pickle.dump(obj, open(path+".pickle","wb"))
 
   return loutlines, routlines, kernpairs
+
+def get_m_width(path):
+  face = freetype.Face(path)
+  face.set_char_size( 64 * face.units_per_EM )
+  n = face.get_name_index("m")
+  face.load_glyph(n, freetype.FT_LOAD_RENDER |
+                            freetype.FT_LOAD_TARGET_MONO)
+  return face.glyph.metrics.horiAdvance / 64
+
+def get_n_width(path):
+  face = freetype.Face(path)
+  face.set_char_size( 64 * face.units_per_EM )
+  n = face.get_name_index("n")
+  face.load_glyph(n, freetype.FT_LOAD_RENDER |
+                            freetype.FT_LOAD_TARGET_MONO)
+  return face.glyph.metrics.horiAdvance / 64
+
 
 if __name__ == '__main__':
   for n in sys.argv[1::]:
     print(n+": ", end="")
-    loadfont(n, n + ".kerndump")
+    loutlines, routlines, kernpairs = loadfont(n, n+".kerndump")
+    def contour_between(left, right):
+      return np.array(routlines[left]) + np.array(routlines[right])
+
+    print("A:", np.array(routlines["A"]))
+    print("V:", np.array(loutlines["V"]))
+    print("AV:", contour_between("A","V"))
+    print("AN:", contour_between("A","N"))
