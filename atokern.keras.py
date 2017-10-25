@@ -19,7 +19,7 @@ epoch = 0
 np.set_printoptions(precision=3, suppress=True)
 
 # Hyperparameters. These are all guesses.
-zero_supression = 0.1
+zero_supression = 0.3
 repeat_supression = 0.2
 
 def drop(x): return Dropout(0.1)(x)
@@ -120,8 +120,15 @@ def do_a_font(path, kerndump, epoch):
     return np.array(routlines[letter])/mwidth
 
   def add_entry(left, right):
-    input_tensors["rightofl"].append(rightcontour(left))
-    input_tensors["leftofr"].append(rightcontour(right))
+    if "leftofl" in input_tensors:
+      input_tensors["leftofl"].append(leftcontour(left))
+    if "rightofl" in input_tensors:
+      input_tensors["rightofl"].append(rightcontour(left))
+
+    if "leftofr" in input_tensors:
+      input_tensors["leftofr"].append(leftcontour(right))
+    if "rightofr" in input_tensors:
+      input_tensors["rightofr"].append(rightcontour(right))
 
     kern = (kernpairs[left][right])/mwidth
     if regress:
@@ -131,9 +138,8 @@ def do_a_font(path, kerndump, epoch):
 
   for left in safe_glyphs:
     for right in safe_glyphs:
-      print(left,right)
-      # if kernpairs[left][right] != 0 or True or random.random() < zero_supression:
-      add_entry(left,right)
+      if kernpairs[left][right] != 0 or random.random() < zero_supression:
+        add_entry(left,right)
 
 files = glob.glob("./kern-dump/Sou*egular.?tf")
 epochn = 0
@@ -150,9 +156,9 @@ for n in input_names:
   input_tensors[n] = np.array(input_tensors[n])
 
 history = model.fit(input_tensors, kern_input,
-  batch_size=32, epochs=2000, verbose=1, callbacks=[
-  earlystop,
-  checkpointer
+  batch_size=1, epochs=200, verbose=1, callbacks=[
+  earlystop
+  # checkpointer
 ],shuffle = True,
   validation_split=0.2, initial_epoch=0)
 
