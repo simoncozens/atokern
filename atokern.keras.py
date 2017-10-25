@@ -119,18 +119,18 @@ def do_a_font(path, kerndump, epoch):
   def rightcontour(letter):
     return np.array(routlines[letter])/mwidth
 
-  def add_entry(left, right):
+  def add_entry(left, right,wiggle):
     if "leftofl" in input_tensors:
-      input_tensors["leftofl"].append(leftcontour(left))
+      input_tensors["leftofl"].append(leftcontour(left)+wiggle/mwidth)
     if "rightofl" in input_tensors:
-      input_tensors["rightofl"].append(rightcontour(left))
+      input_tensors["rightofl"].append(rightcontour(left)+wiggle/mwidth)
 
     if "leftofr" in input_tensors:
-      input_tensors["leftofr"].append(leftcontour(right))
+      input_tensors["leftofr"].append(leftcontour(right)+wiggle/mwidth)
     if "rightofr" in input_tensors:
-      input_tensors["rightofr"].append(rightcontour(right))
+      input_tensors["rightofr"].append(rightcontour(right)+wiggle/mwidth)
 
-    kern = (kernpairs[left][right])/mwidth
+    kern = (kernpairs[left][right]-2*wiggle)/mwidth
     if regress:
       kern_input.append(kern)
     else:
@@ -139,7 +139,8 @@ def do_a_font(path, kerndump, epoch):
   for left in safe_glyphs:
     for right in safe_glyphs:
       if kernpairs[left][right] != 0 or random.random() < zero_supression:
-        add_entry(left,right)
+        for w in range(-2,2):
+          add_entry(left,right,w)
 
 files = glob.glob("./kern-dump/Sou*egular.?tf")
 epochn = 0
