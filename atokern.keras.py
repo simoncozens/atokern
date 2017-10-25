@@ -157,7 +157,7 @@ for n in input_names:
   input_tensors[n] = np.array(input_tensors[n])
 
 history = model.fit(input_tensors, kern_input,
-  batch_size=1, epochs=200, verbose=1, callbacks=[
+  batch_size=8, epochs=200, verbose=1, callbacks=[
   earlystop
   # checkpointer
 ],shuffle = True,
