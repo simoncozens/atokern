@@ -44,7 +44,7 @@ for n in input_names:
   nets.append(drop(input_))
 
 x = keras.layers.concatenate(nets)
-x = relu(x, layers=3,nodes=128)
+x = relu(x, layers=10,nodes=128)
 x = drop(x)
 def bin_kern3(value):
   if value < -5/800: return 0
@@ -97,6 +97,7 @@ model = Model(inputs=inputs, outputs=[kernvalue])
 print("Compiling network")
 
 opt = keras.optimizers.adam()
+
 if regress:
   loss = 'mean_squared_error'
   metrics = []
@@ -168,7 +169,7 @@ for n in input_names:
   input_tensors[n] = np.array(input_tensors[n])
 
 history = model.fit(input_tensors, kern_input,
-  batch_size=8, epochs=200, verbose=1, callbacks=[
+  batch_size=32, epochs=200, verbose=1, callbacks=[
   earlystop,
   checkpointer
 ],shuffle = True,
