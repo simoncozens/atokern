@@ -7,15 +7,17 @@ import glob
 import random
 from math import copysign
 from sidebearings import safe_glyphs, loadfont, samples, get_m_width
-from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway
+from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, hinged_min_error
 import keras
 
 np.set_printoptions(precision=3, suppress=True)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+safe_glyphs = ["A", "V", "W", "T", "Y", "H", "O", "n", "i", "h", "e"]
+
 # Design the network:
 print("Loading network")
-model = keras.models.load_model("kernmodel.hdf5")
+model = keras.models.load_model("kernmodel.hdf5", custom_objects={'hinged_min_error': hinged_min_error})
 
 def bin_to_label3(value, mwidth):
   if value == 0: return "-"
@@ -23,7 +25,7 @@ def bin_to_label3(value, mwidth):
   if value == 2: return "+"
 
 def bin_to_label(value, mwidth):
-  rw = 1024
+  rw = 800
   scale = mwidth/rw
   if value == 0:
     low = "-inf"; high = int(-150 * scale)
@@ -88,7 +90,6 @@ input_tensors = {}
 for n in input_names:
   input_tensors[n] = []
 
-safe_glyphs = ["A", "V", "W", "T", "Y", "H", "O"]
 # Trains the NN given a font and its associated kern dump
 def do_a_font(path):
   mwidth = get_m_width(path)

@@ -11,12 +11,13 @@ import string
 from keras.layers import Input, Embedding, LSTM, Dense, Dropout, Conv1D, MaxPool1D, Flatten
 from keras.models import Model
 from keras.constraints import maxnorm
-import keras
+from keras.losses import mean_squared_error
 from sklearn.utils import class_weight
+import keras
 
 import freetype
 from sidebearings import safe_glyphs, loadfont, samples, get_m_width
-from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, trust_zeros
+from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, trust_zeros, hinged_min_error
 
 epoch = 0
 
@@ -29,7 +30,6 @@ def relu(x, layers=1, nodes=32):
     x = Dense(nodes, activation='relu', kernel_initializer='uniform')(x)
   return x
 
-# safe_glyphs = ["A", "V", "H", "O", "Y", "W"]
 # Design the network:
 print("Building network")
 
@@ -53,10 +53,10 @@ x = drop(Dense(512, activation='relu', kernel_initializer='uniform')(x))
 x = drop(Dense(256, activation='relu', kernel_initializer='uniform')(x))
 x = drop(Dense(128, activation='relu', kernel_initializer='uniform')(x))
 x = drop(Dense(64, activation='relu', kernel_initializer='uniform')(x))
-# x = drop(Dense(128, activation='relu', kernel_initializer='uniform')(x))
-# x = drop(Dense(256, activation='relu', kernel_initializer='uniform')(x))
-# x = drop(Dense(512, activation='relu', kernel_initializer='uniform')(x))
-# x = drop(Dense(1024, activation='relu', kernel_initializer='uniform')(x))
+x = drop(Dense(128, activation='relu', kernel_initializer='uniform')(x))
+x = drop(Dense(256, activation='relu', kernel_initializer='uniform')(x))
+x = drop(Dense(512, activation='relu', kernel_initializer='uniform')(x))
+x = drop(Dense(1024, activation='relu', kernel_initializer='uniform')(x))
 
 def bin_kern3(value):
   if value < -5/800: return 0
@@ -130,6 +130,7 @@ reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=lr_deca
 tensorboard = keras.callbacks.TensorBoard(log_dir='./logs', histogram_freq=0, batch_size=batch_size, write_graph=False, write_grads=False, write_images=False, embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None)
 
 kern_input = []
+mindist_input = []
 sample_weights = []
 input_tensors = {}
 upper = [i for i in string.ascii_uppercase]
@@ -189,11 +190,15 @@ def do_a_font(path, kerndump, epoch):
       kern = kernpairs[left][right]
     else:
       kern = 0
-    kern = (kern-2*wiggle)/mwidth
-    # kern = random.randint(-20,20)
-    # print(left,right,kern,binfunction(kern))
+    kern = kern/mwidth
+
     if regress:
       kern_input.append(kern)
+      # Minimum distance
+      mindist = np.min(rightcontour(left)+leftcontour(right))
+      # Apply kerning
+      mindist = mindist + kern
+      mindist_input.append(mindist)
     else:
       kern_input.append(binfunction(kern))
     sample_weights.append(0.1+100*abs(kern))
@@ -218,6 +223,7 @@ if not regress:
     input_tensors[n] = np.array(input_tensors[n])
 else:
   kern_input = np.array(kern_input)
+  mindist_input = np.array(mindist_input)
   for n in input_names:
     input_tensors[n] = np.array(input_tensors[n])
 
@@ -235,6 +241,7 @@ if augmentation > 0:
 
   if regress:
     kern_input = np.tile(kern_input,1+augmentation)
+    mindist_input = np.tile(mindist_input,1+augmentation)
   else:
     kern_input = np.tile(kern_input,(1+augmentation,1))
 
