@@ -13,7 +13,7 @@ safe_glyphs = set([
    "period", "comma", "colon"
    ])
 
-samples = 20
+samples = 100
 
 def unpack_mono_bitmap(bitmap):
   data = bytearray(bitmap.rows * bitmap.width)
@@ -146,8 +146,6 @@ def loadfont(path, kerndump):
   else:
     for l in safe_glyphs:
       kernpairs[l]=dict()
-      for r in safe_glyphs:
-        kernpairs[l][r] = 0
 
     if kerndump:
       load_kernpairs(kerndump)

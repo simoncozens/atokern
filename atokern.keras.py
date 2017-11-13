@@ -8,25 +8,19 @@ import math
 import string
 #from matplotlib import pyplot
 
-from keras.layers import Input, Embedding, LSTM, Dense, Dropout
+from keras.layers import Input, Embedding, LSTM, Dense, Dropout, Conv1D, MaxPool1D, Flatten
 from keras.models import Model
 from keras.constraints import maxnorm
 import keras
+from sklearn.utils import class_weight
 
 import freetype
 from sidebearings import safe_glyphs, loadfont, samples, get_m_width
+from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, trust_zeros
+
 epoch = 0
 
-# Hyperparameters. These are all guesses.
-augmentation = 2
-batch_size = 256
-depth = 5
-width = 512
-dropout_rate = 0.3
-init_lr = 0.001
 
-regress = False
-threeway = True
 files = glob.glob("kern-dump/*.?tf")
 
 def drop(x): return Dropout(dropout_rate)(x)
@@ -35,22 +29,34 @@ def relu(x, layers=1, nodes=32):
     x = Dense(nodes, activation='relu', kernel_initializer='uniform')(x)
   return x
 
+# safe_glyphs = ["A", "V", "H", "O", "Y", "W"]
 # Design the network:
 print("Building network")
-input_names = [
-"rightofl", "leftofr",
-"rightofn", "leftofo"]
+
 inputs = []
 nets = []
 
 for n in input_names:
-  input_ = Input(shape=(samples,), dtype='float32', name=n)
+  input_ = Input(shape=(samples,1), dtype='float32', name=n)
   inputs.append(input_)
-  net = drop(input_)
+  conv = Conv1D(2,2,activation='relu')(input_)
+  pool = MaxPool1D(pool_size=2)(conv)
+  flat = Flatten()(pool)
+  # net = drop(input_)
+  net = flat
   nets.append(net)
 
 x = keras.layers.concatenate(nets)
-x = relu(x, layers=depth,nodes=width)
+# x = drop(relu(x, layers=depth,nodes=width))
+x = drop(Dense(1024, activation='relu', kernel_initializer='uniform')(x))
+x = drop(Dense(512, activation='relu', kernel_initializer='uniform')(x))
+x = drop(Dense(256, activation='relu', kernel_initializer='uniform')(x))
+x = drop(Dense(128, activation='relu', kernel_initializer='uniform')(x))
+x = drop(Dense(64, activation='relu', kernel_initializer='uniform')(x))
+# x = drop(Dense(128, activation='relu', kernel_initializer='uniform')(x))
+# x = drop(Dense(256, activation='relu', kernel_initializer='uniform')(x))
+# x = drop(Dense(512, activation='relu', kernel_initializer='uniform')(x))
+# x = drop(Dense(1024, activation='relu', kernel_initializer='uniform')(x))
 
 def bin_kern3(value):
   if value < -5/800: return 0
@@ -120,15 +126,18 @@ else:
 
 checkpointer = keras.callbacks.ModelCheckpoint(filepath='kernmodel.hdf5', verbose=0, save_best_only=True)
 earlystop = keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.001, patience=50, verbose=1, mode='auto')
-reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=10, verbose=1, mode='auto', epsilon=0.0001, cooldown=5, min_lr=0)
+reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=lr_decay, patience=10, verbose=1, mode='auto', epsilon=0.0001, cooldown=2, min_lr=0)
 tensorboard = keras.callbacks.TensorBoard(log_dir='./logs', histogram_freq=0, batch_size=batch_size, write_graph=False, write_grads=False, write_images=False, embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None)
 
 kern_input = []
+sample_weights = []
 input_tensors = {}
 upper = [i for i in string.ascii_uppercase]
 lower = [i for i in string.ascii_lowercase]
 for n in input_names:
   input_tensors[n] = []
+
+input_tensors["mwidth"] = []
 
 def do_a_font(path, kerndump, epoch):
   loutlines, routlines, kernpairs = loadfont(path,kerndump)
@@ -139,6 +148,7 @@ def do_a_font(path, kerndump, epoch):
     return np.array(routlines[letter])/mwidth
 
   def add_entry(left, right,wiggle):
+    input_tensors["mwidth"].append(mwidth)
     if "minsumdist" in input_tensors:
       input_tensors["minsumdist"].append(np.min(rightcontour(left)+leftcontour(right)+2*wiggle/mwidth))
 
@@ -166,6 +176,14 @@ def do_a_font(path, kerndump, epoch):
       input_tensors["leftofo"].append(leftcontour("o"))
     if "rightofo" in input_tensors:
       input_tensors["rightofo"].append(rightcontour("o"))
+    if "leftofH" in input_tensors:
+      input_tensors["leftofH"].append(leftcontour("H"))
+    if "rightofH" in input_tensors:
+      input_tensors["rightofH"].append(rightcontour("H"))
+    if "leftofO" in input_tensors:
+      input_tensors["leftofO"].append(leftcontour("O"))
+    if "rightofO" in input_tensors:
+      input_tensors["rightofO"].append(rightcontour("O"))
 
     if right in kernpairs[left]:
       kern = kernpairs[left][right]
@@ -173,41 +191,70 @@ def do_a_font(path, kerndump, epoch):
       kern = 0
     kern = (kern-2*wiggle)/mwidth
     # kern = random.randint(-20,20)
+    # print(left,right,kern,binfunction(kern))
     if regress:
       kern_input.append(kern)
     else:
       kern_input.append(binfunction(kern))
+    sample_weights.append(0.1+100*abs(kern))
 
   for left in safe_glyphs:
     for right in safe_glyphs:
-      if right in kernpairs[left]:
-        for w in range(-augmentation,1+augmentation,1):
-          add_entry(left,right,w)
+      if right in kernpairs[left] or trust_zeros:
+        add_entry(left,right,0)
 
 epochn = 0
 for i in files:
   print(i)
   do_a_font(i,i+".kerndump", epochn)
 
-if not regress:
-  kern_input2 = keras.utils.to_categorical(kern_input, num_classes=kern_bins)
-  bins = kern_input2.sum(axis=0)
-  bins.fill(np.min(bins))
-  selections = []
-  for i in range(0,kern_input2.shape[0]-1):
-    if bins[kern_input[i]] >= 0:
-      selections.append(i)
-    bins[kern_input[i]] = bins[kern_input[i]]-1
+# Correct for class frequency discrepancy
+# (Many more zero kerns than positive kerns)
+class_weight = class_weight.compute_class_weight('balanced', np.unique(kern_input), kern_input)
 
-  kern_input = kern_input2[selections]
+if not regress:
+  kern_input = keras.utils.to_categorical(kern_input, num_classes=kern_bins)
   for n in input_names:
-    input_tensors[n] = np.array(input_tensors[n])[selections]
-  print(kern_input.sum(axis=0))
+    input_tensors[n] = np.array(input_tensors[n])
 else:
+  kern_input = np.array(kern_input)
   for n in input_names:
     input_tensors[n] = np.array(input_tensors[n])
 
+input_tensors["mwidth"] = np.array(input_tensors["mwidth"])
+#Augment data
+if augmentation > 0:
+  for n in input_names:
+    t = input_tensors[n]
+    out = None
+    for i in range(0,augmentation):
+      aug = t + np.random.randint(-2, high=2, size=t.shape) / np.expand_dims(input_tensors["mwidth"],axis=2)
+      if type(out) == type(None):
+        out = aug
+      else:
+        out = np.concatenate((out,aug))
+    input_tensors[n] = np.concatenate((t,out))
+
+  if regress:
+    kern_input = np.tile(kern_input,1+augmentation)
+  else:
+    kern_input = np.tile(kern_input,(1+augmentation,1))
+
+  sample_weights = np.tile(sample_weights,1+augmentation)
+
+for n in input_names:
+  input_tensors[n] = np.expand_dims(input_tensors[n], axis=2)
+
+if regress:
+  class_weight = None
+else:
+  print(kern_input.sum(axis=0))
+  class_weight = dict(enumerate(class_weight))
+  print(class_weight)
+
 history = model.fit(input_tensors, kern_input,
+  # sample_weight = sample_weights,
+  class_weight = class_weight,
   batch_size=batch_size, epochs=5000, verbose=1, callbacks=[
   earlystop,
   checkpointer,

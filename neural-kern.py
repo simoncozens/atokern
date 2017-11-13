@@ -6,195 +6,151 @@ import os.path
 import glob
 import random
 from math import copysign
-
-from keras.layers import Input, Embedding, LSTM, Dense, Dropout
-from keras.models import Model
-from keras.constraints import maxnorm
+from sidebearings import safe_glyphs, loadfont, samples, get_m_width
+from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway
 import keras
 
 np.set_printoptions(precision=3, suppress=True)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
-
-epoch = 0
-
-# Hyperparameters. These are all guesses. (Samples should be OK.)
-
-samples = 100
-n_l_inputs = samples
-n_r_inputs = n_l_inputs
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 # Design the network:
 print("Loading network")
 model = keras.models.load_model("kernmodel.hdf5")
 
-def bin2label(value):
-  # if value == 0: return "-"
-  # if value == 1: return "0"
-  # if value == 2: return "+"
-  if value == 0: return "<-50"
-  if value == 1: return "-25"
-  if value == 2: return "-15"
-  if value == 3: return "-5"
-  if value == 4: return "0"
-  if value == 5: return "5"
-  if value == 6: return "15"
-  if value == 7: return "25"
-  if value == 8: return ">50"
+def bin_to_label3(value, mwidth):
+  if value == 0: return "-"
+  if value == 1: return "0"
+  if value == 2: return "+"
 
-safe_glyphs = set([
-  "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
-  "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
-  "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
-  "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
-   "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "zero", 
-   "period", "comma", "colon"])
+def bin_to_label(value, mwidth):
+  rw = 1024
+  scale = mwidth/rw
+  if value == 0:
+    low = "-inf"; high = int(-150 * scale)
+  if value == 1:
+    low = int(-150 * scale); high = int(-100 * scale)
+  if value == 2:
+    low = int(-100 * scale); high = int(-70 * scale)
+  if value == 3:
+    low = int(-70 * scale); high = int(-50 * scale)
+  if value == 4:
+    low = int(-50 * scale); high = int(-45 * scale)
+  if value == 5:
+    low = int(-45 * scale); high = int(-40 * scale)
+  if value == 6:
+    low = int(-40 * scale); high = int(-35 * scale)
+  if value == 7:
+    low = int(-35 * scale); high = int(-30 * scale)
+  if value ==8:
+    low = int(-30 * scale); high = int(-25 * scale)
+  if value ==9:
+    low = int(-25 * scale); high = int(-20 * scale)
+  if value ==10:
+    low = int(-20 * scale); high = int(-15 * scale)
+  if value == 11:
+    low = int(-15 * scale); high = int(-10 * scale)
+  if value == 12:
+    low = int(-10 * scale); high = int(-5 * scale)
+  if value == 13:
+    low = int(-5 * scale); high = int(-0 * scale)
+  if value == 14:
+    return "0"
+  if value == 15:
+    low = int(0 * scale); high = int(5 * scale)
+  if value == 16:
+    low = int(5 * scale); high = int(10 * scale)
+  if value == 17:
+    low = int(10 * scale); high = int(15 * scale)
+  if value == 18:
+    low = int(15 * scale); high = int(20 * scale)
+  if value == 19:
+    low = int(20 * scale); high = int(25 * scale)
+  if value == 20:
+    low = int(25 * scale); high = int(30 * scale)
+  if value == 21:
+    low = int(30 * scale); high = int(35 * scale)
+  if value == 22:
+    low = int(35 * scale); high = int(40 * scale)
+  if value == 23:
+    low = int(40 * scale); high = int(45 * scale)
+  if value == 24:
+    low = int(45 * scale); high = int(50 * scale)
+  if value == 25:
+    low = int(50 * scale); high = int(inf * scale)
+  return str(low)+" - "+str(high)
 
-def unpack_mono_bitmap(bitmap):
-  data = bytearray(bitmap.rows * bitmap.width)
-  buff = bitmap._get_buffer()
-  for y in range(bitmap.rows):
-    for byte_index in range(bitmap.pitch):
-      byte_value = buff[y * bitmap.pitch + byte_index]
-      num_bits_done = byte_index * 8
-      rowstart = y * bitmap.width + byte_index * 8
-      for bit_index in range(min(8, bitmap.width - num_bits_done)):
-        bit = byte_value & (1 << (7 - bit_index))
-        data[rowstart + bit_index] = 1 if bit else 0
-  return data
+if threeway:
+  binfunction = bin_to_label3
+else:
+  binfunction = bin_to_label
 
-def bbox(outline):
-  start, end = 0, 0
-  VERTS = []
-  # Iterate over each contour
-  for i in range(len(outline.contours)):
-      end    = outline.contours[i]
-      points = outline.points[start:end+1]
-      points.append(points[0])
-      tags   = outline.tags[start:end+1]
-      tags.append(tags[0])
-      segments = [ [points[0],], ]
-      for j in range(1, len(points) ):
-          segments[-1].append(points[j])
-          if tags[j] & (1 << 0) and j < (len(points)-1):
-              segments.append( [points[j],] )
-      verts = [points[0], ]
-      for segment in segments:
-          if len(segment) == 2:
-              verts.extend(segment[1:])
-          elif len(segment) == 3:
-              verts.extend(segment[1:])
-          else:
-              verts.append(segment[1])
-              for i in range(1,len(segment)-2):
-                  A,B = segment[i], segment[i+1]
-                  C = ((A[0]+B[0])/2.0, (A[1]+B[1])/2.0)
-                  verts.extend([ C, B ])
-              verts.append(segment[-1])
-      VERTS.extend(verts)
-      start = end+1
-  VERTS = np.array(VERTS)
-  x,y = VERTS[:,0], VERTS[:,1]
-  VERTS[:,0], VERTS[:,1] = x, y
+input_tensors = {}
+for n in input_names:
+  input_tensors[n] = []
 
-  xmin, xmax = x.min() /64, x.max() /64
-  ymin, ymax = y.min() /64, y.max()/64
-  return (xmin, xmax, ymin,ymax)
-
-# Turn a glyph into a tensor of boundary samples
-def glyph_to_sb(face, data, which="L"):
-  glyph = face.glyph
-  sb = []
-  w, h = glyph.bitmap.width, glyph.bitmap.rows
-  ascender = face.ascender
-  lsb = glyph.metrics.horiBearingX / 64.0
-  rsb = glyph.metrics.horiAdvance / 64.0 - (w + glyph.metrics.horiBearingX / 64.0)
-  # print("Width: ", w)
-  # print("Height: ", h)
-  # print("LSB: ", lsb)
-  # print("RSB: ", rsb)
-  # print("Ascender", ascender)
-  # print("Bearing Y", glyph.metrics.horiBearingY / 64.0)
-  # print("Bbox", bbox(glyph.outline))
-  (xmin, xmax, ymin,ymax) = bbox(glyph.outline)
-  if which == "L":
-    iterx = range(w)
-    last = w-1
-    const = rsb
-  else:
-    iterx = range(w-1,-1,-1)
-    last = 0
-    const = lsb
-
-  for _ in range(ascender-int(glyph.metrics.horiBearingY / 64.0)):
-    sb.append(int(const+w))
-
-  for y in range(-int(ymin),h):
-    for x in iterx:
-      y2 = int(ymin)+y
-      if data[w*y2+x] == 1 or x==last:
-        if which == "L":
-          sb.append(int(const+x))
-        else:
-          sb.append(int(const+(w-x)))
-        break
-
-  newsb = []
-  i = 0
-  for i in range(samples):
-    sliceval = int(i*len(sb) / samples)
-    newsb.append(sb[sliceval] / w)
-  return newsb
-
+safe_glyphs = ["A", "V", "W", "T", "Y", "H", "O"]
 # Trains the NN given a font and its associated kern dump
 def do_a_font(path):
-  face = freetype.Face(path)
-  face.set_char_size( 64*500)
-  loutlines = dict()
-  routlines = dict()
+  mwidth = get_m_width(path)
+  print("Loading font")
+  loutlines, routlines, _ = loadfont(path, None)
 
-  left_input = []
-  right_input = []
-  kern_input = []
-  o_left_input = []
-  o_right_input = []
-  n_left_input = []
-  n_right_input = []
-
-  for g in safe_glyphs:
-    glyphindex = face.get_name_index(g.encode("utf8"))
-    if glyphindex:
-      face.load_glyph(glyphindex, freetype.FT_LOAD_RENDER |
-                                freetype.FT_LOAD_TARGET_MONO)
-      data = unpack_mono_bitmap(face.glyph.bitmap)
-      loutlines[g] = np.array(glyph_to_sb(face, data, which="L"))
-      routlines[g] = np.array(glyph_to_sb(face, data, which="R"))
+  def leftcontour(letter):
+    return np.array(loutlines[letter])/mwidth
+  def rightcontour(letter):
+    return np.array(routlines[letter])/mwidth
 
   for left in sorted(safe_glyphs):
     for right in sorted(safe_glyphs):
-      left_input.append(routlines[left])
-      right_input.append(loutlines[right])
-      o_left_input.append(loutlines["o"])
-      o_right_input.append(routlines["o"])
-      n_left_input.append(loutlines["n"])
-      n_right_input.append(routlines["n"])
+      wiggle = 0
+      if "minsumdist" in input_tensors:
+        input_tensors["minsumdist"].append(np.min(rightcontour(left)+leftcontour(right)+2*wiggle/mwidth))
+      if "leftofl" in input_tensors:
+        input_tensors["leftofl"].append(leftcontour(left))
+      if "rightofl" in input_tensors:
+        input_tensors["rightofl"].append(rightcontour(left)+wiggle/mwidth)
 
-  predictions = model.predict({
-    "left":  np.array(left_input),
-    "right": np.array(right_input),
-    "left_n": np.array(n_left_input),
-    "right_n": np.array(n_right_input),
-    "left_o": np.array(o_left_input),
-    "right_o": np.array(o_right_input)
-    })
+      if "leftofr" in input_tensors:
+        input_tensors["leftofr"].append(leftcontour(right)+wiggle/mwidth)
+      if "rightofr" in input_tensors:
+        input_tensors["rightofr"].append(rightcontour(right))
 
+      if "leftofn" in input_tensors:
+        input_tensors["leftofn"].append(leftcontour("n"))
+      if "rightofn" in input_tensors:
+        input_tensors["rightofn"].append(rightcontour("n"))
+      if "leftofo" in input_tensors:
+        input_tensors["leftofo"].append(leftcontour("o"))
+      if "rightofo" in input_tensors:
+        input_tensors["rightofo"].append(rightcontour("o"))
+      if "leftofH" in input_tensors:
+        input_tensors["leftofH"].append(leftcontour("H"))
+      if "rightofH" in input_tensors:
+        input_tensors["rightofH"].append(rightcontour("H"))
+      if "leftofO" in input_tensors:
+        input_tensors["leftofO"].append(leftcontour("O"))
+      if "rightofO" in input_tensors:
+        input_tensors["rightofO"].append(rightcontour("O"))
+
+  for n in input_names:
+    input_tensors[n] = np.array(input_tensors[n])
+    input_tensors[n] = np.expand_dims(input_tensors[n], axis=2)
+
+  predictions = model.predict(input_tensors)
   loop = 0
-  classes = np.argmax(predictions, axis=1)
+  if not regress:
+    classes = np.argmax(predictions, axis=1)
 
   for left in sorted(safe_glyphs):
     for right in sorted(safe_glyphs):
-      prediction = classes[loop]
-      if bin2label(prediction) != '0':
-        print(left, right, bin2label(prediction))
+      if regress:
+        prediction = int(predictions[loop] * mwidth)
+        print(left, right, prediction)
+      else:
+        prediction = classes[loop]
+        # if binfunction(prediction, mwidth) != "0":
+        print(left, right, binfunction(prediction, mwidth), "p=", int(100*predictions[loop][classes[loop]]), "%")
+
       loop = loop + 1
 
 do_a_font(sys.argv[1])
