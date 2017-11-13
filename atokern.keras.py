@@ -227,13 +227,11 @@ if augmentation > 0:
   for n in input_names:
     t = input_tensors[n]
     out = None
+    augs = [t]
     for i in range(0,augmentation):
       aug = t + np.random.randint(-2, high=2, size=t.shape) / np.expand_dims(input_tensors["mwidth"],axis=2)
-      if type(out) == type(None):
-        out = aug
-      else:
-        out = np.concatenate((out,aug))
-    input_tensors[n] = np.concatenate((t,out))
+      augs.append(aug)
+    input_tensors[n] = np.concatenate(augs)
 
   if regress:
     kern_input = np.tile(kern_input,1+augmentation)
