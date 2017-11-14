@@ -7,17 +7,17 @@ import glob
 import random
 from math import copysign
 from sidebearings import safe_glyphs, loadfont, samples, get_m_width
-from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, hinged_min_error
+from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, hinged_min_error, mse_penalizing_miss
 import keras
 
 np.set_printoptions(precision=3, suppress=True)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-safe_glyphs = ["A", "V", "W", "T", "Y", "H", "O", "n", "i", "h", "e"]
+#safe_glyphs = ["A", "V", "W", "T", "Y", "H", "O", "n", "i", "h", "e"]
 
 # Design the network:
 print("Loading network")
-model = keras.models.load_model("kernmodel.hdf5", custom_objects={'hinged_min_error': hinged_min_error})
+model = keras.models.load_model("kernmodel.hdf5", custom_objects={'hinged_min_error': hinged_min_error, 'mse_penalizing_miss': mse_penalizing_miss})
 
 def bin_to_label3(value, mwidth):
   if value == 0: return "-"
@@ -149,8 +149,8 @@ def do_a_font(path):
         print(left, right, prediction)
       else:
         prediction = classes[loop]
-        # if binfunction(prediction, mwidth) != "0":
-        print(left, right, binfunction(prediction, mwidth), "p=", int(100*predictions[loop][classes[loop]]), "%")
+        if binfunction(prediction, mwidth) != "0":
+          print(left, right, binfunction(prediction, mwidth), "p=", int(100*predictions[loop][classes[loop]]), "%")
 
       loop = loop + 1
 

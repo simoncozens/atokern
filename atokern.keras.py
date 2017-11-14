@@ -7,22 +7,22 @@ import numpy as np
 import math
 import string
 #from matplotlib import pyplot
-
+from functools import partial
+from itertools import product
 from keras.layers import Input, Embedding, LSTM, Dense, Dropout, Conv1D, MaxPool1D, Flatten
 from keras.models import Model
 from keras.constraints import maxnorm
 from keras.losses import mean_squared_error
 from sklearn.utils import class_weight
 import keras
-
+from keras import backend as K
+import tensorflow as tf
 import freetype
 from sidebearings import safe_glyphs, loadfont, samples, get_m_width
-from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, trust_zeros, hinged_min_error
+from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, trust_zeros, hinged_min_error, mu, binfunction, mse_penalizing_miss, kern_bins, files
 
 epoch = 0
-
-
-files = glob.glob("kern-dump/*.?tf")
+np.set_printoptions(precision=3, suppress=True)
 
 def drop(x): return Dropout(dropout_rate)(x)
 def relu(x, layers=1, nodes=32):
@@ -58,47 +58,6 @@ x = drop(Dense(256, activation='relu', kernel_initializer='uniform')(x))
 x = drop(Dense(512, activation='relu', kernel_initializer='uniform')(x))
 x = drop(Dense(1024, activation='relu', kernel_initializer='uniform')(x))
 
-def bin_kern3(value):
-  if value < -5/800: return 0
-  if value > 5/800: return 2
-  return 1
-
-def bin_kern(value):
-  rw = 800
-  if value < -150/rw: return 0
-  if value < -100/rw: return 1
-  if value < -70/rw: return 2
-  if value < -50/rw: return 3
-  if value < -45/rw: return 4
-  if value < -40/rw: return 5
-  if value < -35/rw: return 6
-  if value < -30/rw: return 7
-  if value < -25/rw: return 8
-  if value < -20/rw: return 9
-  if value < -15/rw: return 10
-  if value < -10/rw: return 11
-  if value < -5/rw: return 12
-  if value < 0: return 13
-  if value == 0: return 14
-  if value > 50/rw: return 25
-  if value > 45/rw: return 24
-  if value > 40/rw: return 23
-  if value > 35/rw: return 22
-  if value > 30/rw: return 21
-  if value > 25/rw: return 20
-  if value > 20/rw: return 19
-  if value > 15/rw: return 18
-  if value > 10/rw: return 17
-  if value > 5/rw: return 16
-  if value > 0: return 15
-
-if threeway:
-  kern_bins = 3
-  binfunction = bin_kern3
-else:
-  kern_bins = 26
-  binfunction = bin_kern
-
 if regress:
   kernvalue = Dense(1, activation="linear")(x)
 else:
@@ -117,7 +76,8 @@ else:
     loss = 'mean_squared_error'
     metrics = []
   else:
-    loss = 'categorical_crossentropy'
+    # loss = 'categorical_crossentropy'
+    loss = mse_penalizing_miss
     metrics = ['accuracy']
   model.compile(loss=loss, metrics=metrics, optimizer=opt)
 
@@ -213,10 +173,6 @@ for i in files:
   print(i)
   do_a_font(i,i+".kerndump", epochn)
 
-# Correct for class frequency discrepancy
-# (Many more zero kerns than positive kerns)
-class_weight = class_weight.compute_class_weight('balanced', np.unique(kern_input), kern_input)
-
 if not regress:
   kern_input = keras.utils.to_categorical(kern_input, num_classes=kern_bins)
   for n in input_names:
@@ -253,9 +209,21 @@ for n in input_names:
 if regress:
   class_weight = None
 else:
-  print(kern_input.sum(axis=0))
-  class_weight = dict(enumerate(class_weight))
-  print(class_weight)
+  # Correct for class frequency discrepancy
+  # (Many more zero kerns than positive kerns)
+  def create_class_weight(labels_dict,mu=0.15):
+    total = sum(labels_dict.values())
+    keys = labels_dict.keys()
+    class_weight = dict()
+    for key in keys:
+        score = math.log(mu*total/float(labels_dict[key]))
+        class_weight[key] = score if score > 1.0 else 1.0
+    return class_weight
+
+  counts = kern_input.sum(axis=0)
+  print(counts)
+  class_weight = create_class_weight(dict(enumerate(kern_input.sum(axis=0))),mu)
+  print(counts * list(class_weight.values()))
 
 history = model.fit(input_tensors, kern_input,
   # sample_weight = sample_weights,
