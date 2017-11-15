@@ -18,11 +18,35 @@ import keras
 from keras import backend as K
 import tensorflow as tf
 import freetype
-from sidebearings import safe_glyphs, loadfont, samples, get_m_width
+from sidebearings import safe_glyphs, loadfont, samples, get_m_width, glyphname_to_ascii
 from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, trust_zeros, hinged_min_error, mu, binfunction, mse_penalizing_miss, kern_bins, files
 
 epoch = 0
 np.set_printoptions(precision=3, suppress=True)
+
+# Load bigram frequencies
+import csv
+bigrams = {}
+with open('bigrams.csv','r') as tsvin:
+  tsvin = csv.reader(tsvin, delimiter='\t',quoting=csv.QUOTE_NONE)
+  for row in tsvin:
+    l,r,freq = row[0], row[1], row[2]
+    if not l in bigrams:
+      bigrams[l]={}
+    bigrams[l][r] = freq
+
+def frequency(l,r):
+  if l in glyphname_to_ascii:
+    l = glyphname_to_ascii[l]
+  if r in glyphname_to_ascii:
+    r = glyphname_to_ascii[r]
+  try:
+    w = bigrams[l][r]
+  except Exception as e:
+    return 1
+  return w
+
+# Design the network:
 
 def drop(x): return Dropout(dropout_rate)(x)
 def relu(x, layers=1, nodes=32):
@@ -30,7 +54,6 @@ def relu(x, layers=1, nodes=32):
     x = Dense(nodes, activation='relu', kernel_initializer='uniform')(x)
   return x
 
-# Design the network:
 print("Building network")
 
 inputs = []
@@ -161,7 +184,8 @@ def do_a_font(path, kerndump, epoch):
       mindist_input.append(mindist)
     else:
       kern_input.append(binfunction(kern))
-    sample_weights.append(0.1+100*abs(kern))
+
+    sample_weights.append(frequency(left,right))
 
   for left in safe_glyphs:
     for right in safe_glyphs:
@@ -226,7 +250,7 @@ else:
   print(counts * list(class_weight.values()))
 
 history = model.fit(input_tensors, kern_input,
-  # sample_weight = sample_weights,
+  sample_weight = sample_weights,
   class_weight = class_weight,
   batch_size=batch_size, epochs=5000, verbose=1, callbacks=[
   earlystop,
