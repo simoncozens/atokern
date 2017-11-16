@@ -13,11 +13,6 @@ safe_glyphs = set([
    "period", "comma", "colon"
    ])
 
-glyphname_to_ascii = {
-   "one":"1", "two":"2", "three":"3", "four":"4", "five":"5", "six":"6",
-   "seven":"7", "eight":"8", "nine":"9", "zero":"0",
-   "period":".", "comma":",", "colon":":"
-}
 samples = 100
 
 def unpack_mono_bitmap(bitmap):

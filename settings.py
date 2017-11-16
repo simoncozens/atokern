@@ -1,9 +1,3 @@
-from keras.losses import mean_squared_error
-import tensorflow as tf
-from keras import backend as K
-from functools import partial
-from itertools import product
-import numpy as np
 import glob
 
 files = glob.glob("kern-dump/*.?tf")
@@ -72,23 +66,3 @@ else:
   kern_bins = 26
   binfunction = bin_kern
 
-def hinged_min_error(y_true, y_pred):
-  mse = mean_squared_error(y_true, y_pred)
-  return tf.cast(K.less(y_pred, 0.),tf.float32) * mse * mse + mse
-
-def w_categorical_crossentropy(y_true, y_pred, weights):
-    nb_cl = len(weights)
-    final_mask = K.zeros_like(y_pred[:, 0])
-    y_pred_max = K.max(y_pred, axis=1)
-    y_pred_max = K.expand_dims(y_pred_max, 1)
-    y_pred_max_mat = K.equal(y_pred, y_pred_max)
-    for c_p, c_t in product(range(nb_cl), range(nb_cl)):
-
-        final_mask += (K.cast(weights[c_t, c_p],K.floatx()) * K.cast(y_pred_max_mat[:, c_p] ,K.floatx())* K.cast(y_true[:, c_t],K.floatx()))
-    return K.categorical_crossentropy(y_true, y_pred) * final_mask
-w_array = np.ones((kern_bins,kern_bins))
-w_array[:,binfunction(0)]=false_negative_penalty
-w_array[binfunction(0),:]=false_positive_penalty
-w_array[binfunction(0),binfunction(0)]=1
-mse_penalizing_miss = partial(w_categorical_crossentropy, weights=w_array)
-mse_penalizing_miss.__name__ ='mse_penalizing_miss'

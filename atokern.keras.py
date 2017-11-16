@@ -18,36 +18,13 @@ import keras
 from keras import backend as K
 import tensorflow as tf
 import freetype
-from sidebearings import safe_glyphs, loadfont, samples, get_m_width, glyphname_to_ascii
-from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, trust_zeros, hinged_min_error, mu, binfunction, mse_penalizing_miss, kern_bins, files
+from sidebearings import safe_glyphs, loadfont, samples, get_m_width
+from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, trust_zeros, mu, binfunction, kern_bins, files
+from auxiliary import bigram_frequency, mse_penalizing_miss, create_class_weight, hinged_min_error
 
-epoch = 0
 np.set_printoptions(precision=3, suppress=True)
 
-# Load bigram frequencies
-import csv
-bigrams = {}
-with open('bigrams.csv','r') as tsvin:
-  tsvin = csv.reader(tsvin, delimiter='\t',quoting=csv.QUOTE_NONE)
-  for row in tsvin:
-    l,r,freq = row[0], row[1], row[2]
-    if not l in bigrams:
-      bigrams[l]={}
-    bigrams[l][r] = freq
-
-def frequency(l,r):
-  if l in glyphname_to_ascii:
-    l = glyphname_to_ascii[l]
-  if r in glyphname_to_ascii:
-    r = glyphname_to_ascii[r]
-  try:
-    w = bigrams[l][r]
-  except Exception as e:
-    return 1
-  return w
-
 # Design the network:
-
 def drop(x): return Dropout(dropout_rate)(x)
 def relu(x, layers=1, nodes=32):
   for _ in range(1,layers):
@@ -113,17 +90,14 @@ reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=lr_deca
 tensorboard = keras.callbacks.TensorBoard(log_dir='./logs', histogram_freq=0, batch_size=batch_size, write_graph=False, write_grads=False, write_images=False, embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None)
 
 kern_input = []
-mindist_input = []
 sample_weights = []
 input_tensors = {}
-upper = [i for i in string.ascii_uppercase]
-lower = [i for i in string.ascii_lowercase]
 for n in input_names:
   input_tensors[n] = []
 
 input_tensors["mwidth"] = []
 
-def do_a_font(path, kerndump, epoch):
+def do_a_font(path, kerndump):
   loutlines, routlines, kernpairs = loadfont(path,kerndump)
   mwidth = get_m_width(path)
   def leftcontour(letter):
@@ -131,10 +105,11 @@ def do_a_font(path, kerndump, epoch):
   def rightcontour(letter):
     return np.array(routlines[letter])/mwidth
 
-  def add_entry(left, right,wiggle):
+  def add_entry(left, right):
     input_tensors["mwidth"].append(mwidth)
+
     if "minsumdist" in input_tensors:
-      input_tensors["minsumdist"].append(np.min(rightcontour(left)+leftcontour(right)+2*wiggle/mwidth))
+      input_tensors["minsumdist"].append(np.min(rightcontour(left)+leftcontour(right)))
 
     if "nton" in input_tensors:
       input_tensors["nton"].append(np.min(rightcontour("n")+leftcontour("n")))
@@ -145,10 +120,10 @@ def do_a_font(path, kerndump, epoch):
     if "leftofl" in input_tensors:
       input_tensors["leftofl"].append(leftcontour(left))
     if "rightofl" in input_tensors:
-      input_tensors["rightofl"].append(rightcontour(left)+wiggle/mwidth)
+      input_tensors["rightofl"].append(rightcontour(left))
 
     if "leftofr" in input_tensors:
-      input_tensors["leftofr"].append(leftcontour(right)+wiggle/mwidth)
+      input_tensors["leftofr"].append(leftcontour(right))
     if "rightofr" in input_tensors:
       input_tensors["rightofr"].append(rightcontour(right))
 
@@ -170,42 +145,33 @@ def do_a_font(path, kerndump, epoch):
       input_tensors["rightofO"].append(rightcontour("O"))
 
     if right in kernpairs[left]:
-      kern = kernpairs[left][right]
+      kern = kernpairs[left][right]/mwidth
     else:
       kern = 0
-    kern = kern/mwidth
 
     if regress:
       kern_input.append(kern)
-      # Minimum distance
-      mindist = np.min(rightcontour(left)+leftcontour(right))
-      # Apply kerning
-      mindist = mindist + kern
-      mindist_input.append(mindist)
     else:
       kern_input.append(binfunction(kern))
 
-    sample_weights.append(frequency(left,right))
+    sample_weights.append(bigram_frequency(left,right))
 
   for left in safe_glyphs:
     for right in safe_glyphs:
       if right in kernpairs[left] or trust_zeros:
-        add_entry(left,right,0)
+        add_entry(left,right)
 
-epochn = 0
 for i in files:
   print(i)
-  do_a_font(i,i+".kerndump", epochn)
+  do_a_font(i,i+".kerndump")
 
 if not regress:
   kern_input = keras.utils.to_categorical(kern_input, num_classes=kern_bins)
-  for n in input_names:
-    input_tensors[n] = np.array(input_tensors[n])
 else:
   kern_input = np.array(kern_input)
-  mindist_input = np.array(mindist_input)
-  for n in input_names:
-    input_tensors[n] = np.array(input_tensors[n])
+
+for n in input_names:
+  input_tensors[n] = np.array(input_tensors[n])
 
 input_tensors["mwidth"] = np.array(input_tensors["mwidth"])
 #Augment data
@@ -221,7 +187,6 @@ if augmentation > 0:
 
   if regress:
     kern_input = np.tile(kern_input,1+augmentation)
-    mindist_input = np.tile(mindist_input,1+augmentation)
   else:
     kern_input = np.tile(kern_input,(1+augmentation,1))
 
@@ -235,15 +200,6 @@ if regress:
 else:
   # Correct for class frequency discrepancy
   # (Many more zero kerns than positive kerns)
-  def create_class_weight(labels_dict,mu=0.15):
-    total = sum(labels_dict.values())
-    keys = labels_dict.keys()
-    class_weight = dict()
-    for key in keys:
-        score = math.log(mu*total/float(labels_dict[key]))
-        class_weight[key] = score if score > 1.0 else 1.0
-    return class_weight
-
   counts = kern_input.sum(axis=0)
   print(counts)
   class_weight = create_class_weight(dict(enumerate(kern_input.sum(axis=0))),mu)
