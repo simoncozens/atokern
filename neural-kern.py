@@ -7,7 +7,8 @@ import glob
 import random
 from math import copysign
 from sidebearings import safe_glyphs, loadfont, samples, get_m_width
-from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, hinged_min_error, mse_penalizing_miss
+from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway
+from auxiliary import hinged_min_error, mse_penalizing_miss
 import keras
 
 np.set_printoptions(precision=3, suppress=True)
@@ -149,8 +150,7 @@ def do_a_font(path):
         print(left, right, prediction)
       else:
         prediction = classes[loop]
-        if binfunction(prediction, mwidth) != "0":
-          print(left, right, binfunction(prediction, mwidth), "p=", int(100*predictions[loop][classes[loop]]), "%")
+        print(left, right, binfunction(prediction, mwidth), "p=", int(100*predictions[loop][classes[loop]]), "%")
 
       loop = loop + 1
 
