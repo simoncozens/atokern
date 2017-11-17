@@ -206,7 +206,7 @@ else:
   print(counts * list(class_weight.values()))
 
 history = model.fit(input_tensors, kern_input,
-  sample_weight = sample_weights,
+  sample_weight = np.array(sample_weights),
   class_weight = class_weight,
   batch_size=batch_size, epochs=5000, verbose=1, callbacks=[
   earlystop,
