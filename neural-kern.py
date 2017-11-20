@@ -29,7 +29,7 @@ def bin_to_label(value, mwidth):
   rw = 800
   scale = mwidth/rw
   if value == 0:
-    low = "-inf"; high = int(-150 * scale)
+    low = int(-300 * scale); high = int(-150 * scale)
   if value == 1:
     low = int(-150 * scale); high = int(-100 * scale)
   if value == 2:
@@ -57,7 +57,7 @@ def bin_to_label(value, mwidth):
   if value == 13:
     low = int(-5 * scale); high = int(-0 * scale)
   if value == 14:
-    return "0"
+    return 0
   if value == 15:
     low = int(0 * scale); high = int(5 * scale)
   if value == 16:
@@ -79,8 +79,8 @@ def bin_to_label(value, mwidth):
   if value == 24:
     low = int(45 * scale); high = int(50 * scale)
   if value == 25:
-    low = int(50 * scale); high = int(inf * scale)
-  return str(low)+" - "+str(high)
+    low = int(50 * scale); high = int(100 * scale)
+  return int(5 * round(float((low+high)/2)/5))
 
 if threeway:
   binfunction = bin_to_label3
@@ -150,7 +150,7 @@ def do_a_font(path):
         print(left, right, prediction)
       else:
         prediction = classes[loop]
-        if binfunction(prediction, mwidth) != "0":
+        if binfunction(prediction, mwidth) != 0:
           print(left, right, binfunction(prediction, mwidth), "p=", int(100*predictions[loop][classes[loop]]), "%")
 
       loop = loop + 1
