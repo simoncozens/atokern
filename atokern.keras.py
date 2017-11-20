@@ -9,10 +9,10 @@ import string
 #from matplotlib import pyplot
 from functools import partial
 from itertools import product
-from keras.layers import Input, Embedding, LSTM, Dense, Dropout, Conv1D, MaxPool1D, Flatten
+from keras.layers import Input, Embedding, LSTM, Dense, Dropout, Conv1D, MaxPooling1D, Flatten
 from keras.models import Model
 from keras.constraints import maxnorm
-from keras.losses import mean_squared_error
+#from keras.losses import mean_squared_error
 from sklearn.utils import class_weight
 import keras
 from keras import backend as K
@@ -40,7 +40,7 @@ for n in input_names:
   input_ = Input(shape=(samples,1), dtype='float32', name=n)
   inputs.append(input_)
   conv = Conv1D(2,2,activation='relu')(input_)
-  pool = MaxPool1D(pool_size=2)(conv)
+  pool = MaxPooling1D(pool_size=2)(conv)
   flat = Flatten()(pool)
   # net = drop(input_)
   net = flat
@@ -53,10 +53,10 @@ x = drop(Dense(512, activation='relu', kernel_initializer='uniform')(x))
 x = drop(Dense(256, activation='relu', kernel_initializer='uniform')(x))
 x = drop(Dense(128, activation='relu', kernel_initializer='uniform')(x))
 x = drop(Dense(64, activation='relu', kernel_initializer='uniform')(x))
-# x = drop(Dense(128, activation='relu', kernel_initializer='uniform')(x))
-# x = drop(Dense(256, activation='relu', kernel_initializer='uniform')(x))
-# x = drop(Dense(512, activation='relu', kernel_initializer='uniform')(x))
-# x = drop(Dense(1024, activation='relu', kernel_initializer='uniform')(x))
+x = drop(Dense(128, activation='relu', kernel_initializer='uniform')(x))
+x = drop(Dense(256, activation='relu', kernel_initializer='uniform')(x))
+x = drop(Dense(512, activation='relu', kernel_initializer='uniform')(x))
+x = drop(Dense(1024, activation='relu', kernel_initializer='uniform')(x))
 
 if regress:
   kernvalue = Dense(1, activation="linear")(x)
@@ -161,7 +161,7 @@ def generator(font_files, perturb = False):
         else:
           kern_input.append(binfunction(kern))
 
-        sample_weights.append(bigram_frequency(left,right))
+        sample_weights.append(100000*bigram_frequency(left,right))
 
       for left in safe_glyphs:
         for right in safe_glyphs:
@@ -180,6 +180,7 @@ def generator(font_files, perturb = False):
           input_tensors[n] = input_tensors[n] + np.random.randint(-2, high=2, size=input_tensors[n].shape) / np.expand_dims(input_tensors["mwidth"],axis=2)
         input_tensors[n] = np.expand_dims(input_tensors[n], axis=2)
       yield(input_tensors, kern_input, np.array(sample_weights))
+      # yield(input_tensors, kern_input)
 
 if regress:
   class_weight = None
@@ -189,7 +190,7 @@ else:
 print("Training")
 history = model.fit_generator(generator(training_files, perturb = True),
   steps_per_epoch = len(training_files) * augmentation,
-  # class_weight = class_weight,
+  class_weight = class_weight,
   epochs=5000, verbose=1, callbacks=[
   earlystop,
   checkpointer,

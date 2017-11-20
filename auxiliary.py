@@ -24,7 +24,7 @@ def bigram_frequency(l,r):
   if r in glyphname_to_ascii:
     r = glyphname_to_ascii[r]
   try:
-    w = float(bigrams[l][r])
+    w = float(bigrams[l][r])/82801640.0
   except Exception as e:
     return 1
   return w
