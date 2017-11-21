@@ -154,7 +154,7 @@ def do_a_font(path, kerndump):
     else:
       kern_input.append(binfunction(kern))
 
-    sample_weights.append(bigram_frequency(left,right))
+    sample_weights.append(100000*bigram_frequency(left,right))
 
   for left in safe_glyphs:
     for right in safe_glyphs:
