@@ -105,7 +105,7 @@ def do_a_font(path, kerndump):
   def rightcontour(letter):
     return np.array(routlines[letter])/mwidth
 
-  def add_entry(left, right):
+  def add_entry(left, right, mirrored=False):
     input_tensors["mwidth"].append(mwidth)
 
     if "minsumdist" in input_tensors:
@@ -120,10 +120,16 @@ def do_a_font(path, kerndump):
     if "leftofl" in input_tensors:
       input_tensors["leftofl"].append(leftcontour(left))
     if "rightofl" in input_tensors:
-      input_tensors["rightofl"].append(rightcontour(left))
+      if mirrored:
+        input_tensors["rightofl"].append(leftcontour(right))
+      else:
+        input_tensors["rightofl"].append(rightcontour(left))
 
     if "leftofr" in input_tensors:
-      input_tensors["leftofr"].append(leftcontour(right))
+      if mirrored:
+        input_tensors["leftofr"].append(rightcontour(left))
+      else:
+        input_tensors["leftofr"].append(leftcontour(right))
     if "rightofr" in input_tensors:
       input_tensors["rightofr"].append(rightcontour(right))
 
@@ -160,6 +166,7 @@ def do_a_font(path, kerndump):
     for right in safe_glyphs:
       if right in kernpairs[left] or trust_zeros:
         add_entry(left,right)
+        add_entry(left,right,mirrored=True)
 
 for i in files:
   print(i)
