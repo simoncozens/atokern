@@ -11,6 +11,10 @@ Install the module requirements with `pip`:
 
     pip3 install -r requirements.txt
 
+Now download the latest pretrained model:
+
+    wget http://www.simon-cozens.org/downloads/kernmodel.hdf5
+
 To determine kern pairs for a font:
 
     python3 neural-kern.py myfont.otf
