@@ -168,6 +168,11 @@ def generator(font_files, perturb = False):
           if right in kernpairs[left] or trust_zeros:
             add_entry(left,right)
 
+      # Also add entries for *all* defined kern pairs
+      for left in kernpairs:
+        for right in kernpairs[left]:
+          add_entry(left,right)
+
       if not regress:
         kern_input = keras.utils.to_categorical(kern_input, num_classes=kern_bins)
       else:

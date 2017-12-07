@@ -13,7 +13,7 @@ safe_glyphs = set([
    "period", "comma", "colon"
    ])
 
-samples = 100
+samples = 50
 
 def unpack_mono_bitmap(bitmap):
   data = bytearray(bitmap.rows * bitmap.width)
@@ -58,6 +58,8 @@ def bbox(outline):
               verts.append(segment[-1])
       VERTS.extend(verts)
       start = end+1
+  if (len(VERTS)<1):
+    return (0,0,0,0)
   VERTS = np.array(VERTS)
   x,y = VERTS[:,0], VERTS[:,1]
   VERTS[:,0], VERTS[:,1] = x, y
@@ -131,6 +133,7 @@ def loadfont(path, kerndump):
   loutlines = dict()
   routlines = dict()
   kernpairs = dict()
+  allglyphs = set(safe_glyphs)
 
   def load_kernpairs(file):
     with open(file) as f:
@@ -138,7 +141,9 @@ def loadfont(path, kerndump):
         l,r,k = line.split()
         if not l in kernpairs:
           kernpairs[l] = dict()
+          allglyphs.add(l)
         kernpairs[l][r] = int(k)
+        allglyphs.add(r)
 
   if os.path.isfile(path+".pickle"):
     obj = pickle.load(open(path+".pickle","rb"))
@@ -149,7 +154,7 @@ def loadfont(path, kerndump):
 
     if kerndump:
       load_kernpairs(kerndump)
-    for g in safe_glyphs:
+    for g in allglyphs:
       # print(g+ " ", end='',flush=True)
       loutlines[g], routlines[g] = loadglyph(face, g)
     # print("")
