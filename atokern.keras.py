@@ -90,6 +90,20 @@ reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=lr_deca
 tensorboard = keras.callbacks.TensorBoard(log_dir='./logs', histogram_freq=0, batch_size=batch_size, write_graph=False, write_grads=False, write_images=False, embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None)
 
 safe_glyphs = list(safe_glyphs)
+
+def howmany(font_files):
+  count = 0
+  for path in font_files:
+    kerndump = path+".kerndump"
+    loutlines, routlines, kernpairs = loadfont(path,kerndump)
+    count = count + 1 + len(kernpairs)
+  return count
+
+print("Counting...")
+steps = howmany(training_files) * augmentation
+val_steps = howmany(validation_files)
+print(steps," steps")
+
 def generator(font_files, perturb = False):
   while True:
     random.shuffle(font_files)
@@ -113,6 +127,7 @@ def generator(font_files, perturb = False):
         return np.array(routlines[letter])/mwidth
 
       def add_entry(left, right):
+        print(left,right)
         input_tensors["mwidth"].append(mwidth)
 
         if "minsumdist" in input_tensors:
@@ -163,29 +178,41 @@ def generator(font_files, perturb = False):
 
         sample_weights.append(100000*bigram_frequency(left,right))
 
+      def reset_entries():
+        input_tensors = {}
+        for n in input_names:
+          input_tensors[n] = []
+        input_tensors["mwidth"] = []
+        kern_input = []
+
+      def send_entries():
+        if not regress:
+          kern_input = keras.utils.to_categorical(kern_input, num_classes=kern_bins)
+        else:
+          kern_input = np.array(kern_input)
+
+        input_tensors["mwidth"] = np.array(input_tensors["mwidth"])
+        for n in input_names:
+          input_tensors[n] = np.array(input_tensors[n])
+          if perturb:
+            input_tensors[n] = input_tensors[n] + np.random.randint(-2, high=2, size=input_tensors[n].shape) / np.expand_dims(input_tensors["mwidth"],axis=2)
+          input_tensors[n] = np.expand_dims(input_tensors[n], axis=2)
+        # yield(input_tensors, kern_input, np.array(sample_weights))
+        yield(input_tensors, kern_input)
+
       for left in safe_glyphs:
         for right in safe_glyphs:
           if right in kernpairs[left] or trust_zeros:
             add_entry(left,right)
+      send_entries()
+      reset_entries()
 
       # Also add entries for *all* defined kern pairs
       for left in kernpairs:
         for right in kernpairs[left]:
           add_entry(left,right)
-
-      if not regress:
-        kern_input = keras.utils.to_categorical(kern_input, num_classes=kern_bins)
-      else:
-        kern_input = np.array(kern_input)
-
-      input_tensors["mwidth"] = np.array(input_tensors["mwidth"])
-      for n in input_names:
-        input_tensors[n] = np.array(input_tensors[n])
-        if perturb:
-          input_tensors[n] = input_tensors[n] + np.random.randint(-2, high=2, size=input_tensors[n].shape) / np.expand_dims(input_tensors["mwidth"],axis=2)
-        input_tensors[n] = np.expand_dims(input_tensors[n], axis=2)
-      yield(input_tensors, kern_input, np.array(sample_weights))
-      # yield(input_tensors, kern_input)
+        send_entries()
+        reset_entries()
 
 if regress:
   class_weight = None
@@ -194,7 +221,7 @@ else:
 
 print("Training")
 history = model.fit_generator(generator(training_files, perturb = True),
-  steps_per_epoch = len(training_files) * augmentation,
+  steps_per_epoch = steps,
   class_weight = class_weight,
   epochs=5000, verbose=1, callbacks=[
   earlystop,
@@ -202,7 +229,7 @@ history = model.fit_generator(generator(training_files, perturb = True),
   reduce_lr,
   tensorboard
 ],shuffle = True,
-  validation_steps=len(validation_files),
+  validation_steps=val_steps,
   validation_data=generator(validation_files), initial_epoch=0)
 
 
