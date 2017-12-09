@@ -13,7 +13,7 @@ safe_glyphs = set([
    "period", "comma", "colon"
    ])
 
-samples = 50
+samples = 100
 
 def unpack_mono_bitmap(bitmap):
   data = bytearray(bitmap.rows * bitmap.width)

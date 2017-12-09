@@ -1,21 +1,22 @@
 import glob
 
-training_files = glob.glob("kern-dump/S*.?tf")
+training_files = glob.glob("kern-dump/Sou*.?tf")
 validation_files = glob.glob("kern-dump/validation/*.?tf")
 
 # Hyperparameters. These are all guesses.
-augmentation = 3
-batch_size = 1024
-# depth = 10
-# width = 8
-dropout_rate = 0.3
+augmentation = 5
+batch_size = 512
+depth = 20
+width = 512
+dropout_rate = 0.4
 init_lr = 0.001
 lr_decay = 0.5
 mu = 0.3
 # We predicted 0 but it wasn't
-false_negative_penalty = 2
+false_negative_penalty = 1
 # It was 0 but we said it wasn't
-false_positive_penalty = 2
+false_positive_penalty = 1
+all_pairs = False
 
 input_names = [
 "rightofl", "leftofr",
@@ -25,16 +26,6 @@ input_names = [
 regress = False
 threeway = False
 trust_zeros = True
-
-# Class weights have been precomputed from available data
-# This is because we want to feed classes in by generator
-# and when we do that, we don't know the weightings in advance
-class_weights = [
-    2315.52,     13894.953,    32620.591,    29879.511,    17788.56,
-    16094.317,    22063.566,    23196.987,    30406.138,    31149.27,
-    46542.062,    45089.004,    61497.268,    46647.208,  1036272.,       30751.07,
-    31916.427,    18661.843,    12845.056,     6220.076,     6958.4,
-     3080.824,     1776.911,     1151.792,      959.052,     1069.903]
 
 def bin_kern3(value):
   if value < -5/800: return 0
