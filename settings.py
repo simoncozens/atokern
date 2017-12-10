@@ -1,27 +1,26 @@
 import glob
 
-training_files = glob.glob("kern-dump/Sou*.?tf")
+training_files = glob.glob("kern-dump/Sour*.?tf")
 validation_files = glob.glob("kern-dump/validation/*.?tf")
 
 # Hyperparameters. These are all guesses.
-augmentation = 5
-batch_size = 512
-depth = 20
-width = 512
-dropout_rate = 0.4
-init_lr = 0.001
+augmentation = 1
+batch_size = 256
+depth = 2
+width = 256
+dropout_rate = 0.1
+init_lr = 1e-3
 lr_decay = 0.5
 mu = 0.3
 # We predicted 0 but it wasn't
-false_negative_penalty = 1
+false_negative_penalty = 2
 # It was 0 but we said it wasn't
-false_positive_penalty = 1
-all_pairs = False
+false_positive_penalty = 2
+all_pairs = True
 
 input_names = [
 "rightofl", "leftofr",
-"rightofn", "leftofo",
-"rightofH", "leftofO"
+# "rightofn", "leftofO"
 ]
 regress = False
 threeway = False

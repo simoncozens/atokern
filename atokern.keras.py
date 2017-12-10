@@ -38,21 +38,23 @@ nets = []
 
 for n in input_names:
   input_ = Input(shape=(samples,1), dtype='float32', name=n)
+  # input_ = Input(shape=(samples,), dtype='float32', name=n)
   inputs.append(input_)
   conv = Conv1D(2,2,activation='relu')(input_)
   pool = MaxPooling1D(pool_size=2)(conv)
   flat = Flatten()(pool)
-  # net = drop(input_)
   net = flat
   nets.append(net)
 
 x = keras.layers.concatenate(nets)
-#x = drop(relu(x, layers=depth,nodes=width))
-x = drop(Dense(1024, activation='relu', kernel_initializer='uniform')(x))
-x = drop(Dense(512, activation='relu', kernel_initializer='uniform')(x))
-x = drop(Dense(256, activation='relu', kernel_initializer='uniform')(x))
-x = drop(Dense(128, activation='relu', kernel_initializer='uniform')(x))
-x = drop(Dense(64, activation='relu', kernel_initializer='uniform')(x))
+x = drop(x)
+x = relu(x, layers=depth,nodes=width)
+x = Dense(1024, activation='relu', kernel_initializer='uniform')(x)
+x = Dense(512, activation='relu', kernel_initializer='uniform')(x)
+x = Dense(256, activation='relu', kernel_initializer='uniform')(x)
+x = Dense(128, activation='relu', kernel_initializer='uniform')(x)
+x = Dense(64, activation='relu', kernel_initializer='uniform')(x)
+x = drop(x)
 #x = drop(Dense(128, activation='relu', kernel_initializer='uniform')(x))
 #x = drop(Dense(256, activation='relu', kernel_initializer='uniform')(x))
 #x = drop(Dense(512, activation='relu', kernel_initializer='uniform')(x))
@@ -86,7 +88,7 @@ else:
 
 checkpointer = keras.callbacks.ModelCheckpoint(filepath='kernmodel.hdf5', verbose=0, save_best_only=True)
 earlystop = keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.001, patience=50, verbose=1, mode='auto')
-reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=lr_decay, patience=10, verbose=1, mode='auto', epsilon=0.0001, cooldown=2, min_lr=0)
+reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=lr_decay, patience=10, verbose=1, mode='auto', epsilon=0.0001, cooldown=10, min_lr=0)
 tensorboard = keras.callbacks.TensorBoard(log_dir='./logs', histogram_freq=0, batch_size=batch_size, write_graph=False, write_grads=False, write_images=False, embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None)
 
 safe_glyphs = list(safe_glyphs)
@@ -121,7 +123,7 @@ def howmany(font_files):
 
 print("Counting...")
 steps = math.ceil(howmany(training_files) / batch_size) * augmentation
-val_steps = math.ceil(howmany(validation_files) / batch_size)
+val_steps = 1 # math.ceil(howmany(validation_files) / batch_size)
 print(steps," steps")
 class_weights = np.sum(class_weights) / np.array(class_weights)
 print(class_weights)
@@ -135,8 +137,8 @@ def prep_entries(kern_input, input_tensors, perturb):
   input_tensors["mwidth"] = np.array(input_tensors["mwidth"])
   for n in input_names:
     input_tensors[n] = np.array(input_tensors[n])
-    if perturb:
-      input_tensors[n] = input_tensors[n] + np.random.randint(-2, high=2, size=input_tensors[n].shape) / np.expand_dims(input_tensors["mwidth"],axis=2)
+    # if perturb:
+      # input_tensors[n] = input_tensors[n] + np.random.randint(-2, high=2, size=input_tensors[n].shape) / np.expand_dims(input_tensors["mwidth"],axis=2)
     input_tensors[n] = np.expand_dims(input_tensors[n], axis=2)
   return kern_input, input_tensors
 
@@ -233,7 +235,7 @@ def generator(font_files, perturb = False, full=False):
       for left in safe_glyphs:
         for right in safe_glyphs:
           if right in kernpairs[left] or trust_zeros:
-            add_entry(left,right, kernpairs, loutlines, routlines, input_tensors, kern_input)
+            add_entry(left,right, mwidth, kernpairs, loutlines, routlines, input_tensors, kern_input)
             if len(kern_input) >= batch_size:
                kern_input, input_tensors = prep_entries(kern_input, input_tensors, perturb)
                step = step + 1
@@ -245,50 +247,50 @@ def generator(font_files, perturb = False, full=False):
                  input_tensors[n] = []
                input_tensors["mwidth"] = []
 
-    #   if full and all_pairs:
-    #     # Also add entries for *all* defined kern pairs
-    #     for left in kernpairs:
-    #       for right in (set(kernpairs[left])|set(safe_glyphs)):
-    #         add_entry(left,right, kernpairs, loutlines, routlines, input_tensors, kern_input)
-    #         if len(kern_input) >= batch_size:
-    #            kern_input, input_tensors = prep_entries(kern_input, input_tensors, perturb)
-    #            yield(input_tensors, kern_input)
-    #            kern_input = []
-    #            input_tensors = {}
-    #            for n in input_names:
-    #              input_tensors[n] = []
-    #            input_tensors["mwidth"] = []
-    # kern_input, input_tensors = prep_entries(kern_input, input_tensors, perturb)
-    # yield(input_tensors, kern_input)
+      if full and all_pairs:
+        # Also add entries for *all* defined kern pairs
+        for left in kernpairs:
+          for right in (set(kernpairs[left])|set(safe_glyphs)):
+            add_entry(left,right, mwidth, kernpairs, loutlines, routlines, input_tensors, kern_input)
+            if len(kern_input) >= batch_size:
+               kern_input, input_tensors = prep_entries(kern_input, input_tensors, perturb)
+               yield(input_tensors, kern_input)
+               kern_input = []
+               input_tensors = {}
+               for n in input_names:
+                 input_tensors[n] = []
+               input_tensors["mwidth"] = []
+    kern_input, input_tensors = prep_entries(kern_input, input_tensors, perturb)
+    yield(input_tensors, kern_input)
 
 # if regress:
 # class_weight = None
 # else:
 
 print("Training")
-# history = model.fit_generator(generator(training_files, perturb = True, full = True),
-#   steps_per_epoch = steps,
-#   class_weight = class_weights,
-#   epochs=5000, verbose=1, callbacks=[
-#   earlystop,
-#   checkpointer,
-#   reduce_lr,
-#   tensorboard
-# ],shuffle = True,
-#   validation_steps=val_steps,
-#   validation_data=generator(validation_files), initial_epoch=0)
+history = model.fit_generator(generator(training_files, perturb = True, full = True),
+  steps_per_epoch = steps,
+  class_weight = class_weights,
+  epochs=5000, verbose=1, callbacks=[
+  # earlystop,
+  checkpointer,
+  reduce_lr,
+  tensorboard
+],shuffle = True,
+  validation_steps=val_steps,
+  validation_data=generator(validation_files), initial_epoch=0)
 
 
-kern_input, input_tensors = not_generator(training_files, perturb = True, full = False)
+# kern_input, input_tensors = not_generator(training_files, perturb = True, full = False)
 
-history = model.fit(input_tensors, kern_input,
-   class_weight = class_weights,
-   batch_size=batch_size, epochs=5000, verbose=1, callbacks=[
-    earlystop,
-    checkpointer,
-    reduce_lr,
-    tensorboard
-   ],shuffle = True, validation_split=0.2)
+# history = model.fit(input_tensors, kern_input,
+#    class_weight = class_weights,
+#    batch_size=batch_size, epochs=5000, verbose=1, callbacks=[
+#     earlystop,
+#     checkpointer,
+#     reduce_lr,
+#     tensorboard
+#    ],shuffle = True, validation_split=0.2)
 
 #pyplot.plot(history.history['val_loss'])
 #pyplot.show()
