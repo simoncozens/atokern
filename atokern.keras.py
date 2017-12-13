@@ -148,7 +148,7 @@ def prep_entries(kern_input, input_tensors, perturb):
       input_tensors[n] = np.expand_dims(input_tensors[n], axis=2)
   return kern_input, input_tensors
 
-def add_entry(left,right, mwidth, kernpairs, loutlines, routlines, input_tensors, kern_input):
+def add_entry(left,right, mwidth, kernpairs, loutlines, routlines, input_tensors, kern_input, mirrored=False):
   def leftcontour(letter):
     return np.array(loutlines[letter])/mwidth
   def rightcontour(letter):
@@ -167,11 +167,19 @@ def add_entry(left,right, mwidth, kernpairs, loutlines, routlines, input_tensors
 
   if "leftofl" in input_tensors:
     input_tensors["leftofl"].append(leftcontour(left))
+
   if "rightofl" in input_tensors:
-    input_tensors["rightofl"].append(rightcontour(left))
+    if mirrored:
+      input_tensors["rightofl"].append(leftcontour(right))
+    else:
+      input_tensors["rightofl"].append(rightcontour(left))
 
   if "leftofr" in input_tensors:
-    input_tensors["leftofr"].append(leftcontour(right))
+    if mirrored:
+      input_tensors["leftofr"].append(rightcontour(left))
+    else:
+      input_tensors["leftofr"].append(leftcontour(right))
+
   if "rightofr" in input_tensors:
     input_tensors["rightofr"].append(rightcontour(right))
 
@@ -220,6 +228,7 @@ def not_generator(font_files, perturb = False, full=False):
       for right in safe_glyphs:
         if right in kernpairs[left] or trust_zeros:
           add_entry(left,right, mwidth, kernpairs, loutlines, routlines, input_tensors, kern_input)
+          add_entry(left,right, mwidth, kernpairs, loutlines, routlines, input_tensors, kern_input, mirrored=True)
   kern_input, input_tensors = prep_entries(kern_input, input_tensors, perturb)
   return kern_input, input_tensors
 
@@ -242,6 +251,7 @@ def generator(font_files, perturb = False, full=False):
         for right in safe_glyphs:
           if right in kernpairs[left] or trust_zeros:
             add_entry(left,right, mwidth, kernpairs, loutlines, routlines, input_tensors, kern_input)
+            add_entry(left,right, mwidth, kernpairs, loutlines, routlines, input_tensors, kern_input, mirrored=True)
             if len(kern_input) >= batch_size:
                kern_input, input_tensors = prep_entries(kern_input, input_tensors, perturb)
                step = step + 1
@@ -258,6 +268,7 @@ def generator(font_files, perturb = False, full=False):
         for left in kernpairs:
           for right in (set(kernpairs[left])|set(safe_glyphs)):
             add_entry(left,right, mwidth, kernpairs, loutlines, routlines, input_tensors, kern_input)
+            add_entry(left,right, mwidth, kernpairs, loutlines, routlines, input_tensors, kern_input, mirrored=True)
             if len(kern_input) >= batch_size:
                kern_input, input_tensors = prep_entries(kern_input, input_tensors, perturb)
                yield(input_tensors, kern_input)
