@@ -1,29 +1,34 @@
 import glob
 
-files = glob.glob("kern-dump/*.?tf")
+training_files = glob.glob("kern-dump/Sour*.?tf")
+validation_files = glob.glob("kern-dump/validation/*.?tf")
 
 # Hyperparameters. These are all guesses.
-augmentation = 3
-batch_size = 1024
-# depth = 10
-# width = 8
-dropout_rate = 0.3
-init_lr = 0.001
+augmentation = 1
+batch_size = 256
+depth = 2
+width = 256
+dropout_rate = 0.1
+init_lr = 1e-3
 lr_decay = 0.5
 mu = 0.3
 # We predicted 0 but it wasn't
-false_negative_penalty = 10
+false_negative_penalty = 2
 # It was 0 but we said it wasn't
-false_positive_penalty = 5
+false_positive_penalty = 2
+all_pairs = True
 
 input_names = [
 "rightofl", "leftofr",
-"rightofn", "leftofo",
-"rightofH", "leftofO"
+"rightofn", "leftofn",
+"rightofo", "leftofo",
+"rightofH", "leftofH",
+"rightofO", "leftofO",
 ]
 regress = False
 threeway = False
 trust_zeros = True
+covnet = False
 
 def bin_kern3(value):
   if value < -5/800: return 0
