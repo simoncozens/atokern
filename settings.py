@@ -25,6 +25,7 @@ input_names = [
 regress = False
 threeway = False
 trust_zeros = True
+covnet = False
 
 def bin_kern3(value):
   if value < -5/800: return 0

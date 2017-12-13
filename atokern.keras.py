@@ -19,7 +19,7 @@ from keras import backend as K
 import tensorflow as tf
 import freetype
 from sidebearings import safe_glyphs, loadfont, samples, get_m_width
-from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, trust_zeros, mu, binfunction, kern_bins, training_files, validation_files, all_pairs, width, depth
+from settings import covnet, augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, trust_zeros, mu, binfunction, kern_bins, training_files, validation_files, all_pairs, width, depth
 from auxiliary import bigram_frequency, mse_penalizing_miss, create_class_weight, hinged_min_error
 
 np.set_printoptions(precision=3, suppress=False)
@@ -37,24 +37,29 @@ inputs = []
 nets = []
 
 for n in input_names:
-  input_ = Input(shape=(samples,1), dtype='float32', name=n)
-  # input_ = Input(shape=(samples,), dtype='float32', name=n)
+  if covnet:
+    input_ = Input(shape=(samples,1), dtype='float32', name=n)
+  else:
+    input_ = Input(shape=(samples,), dtype='float32', name=n)
   inputs.append(input_)
-  conv = Conv1D(2,2,activation='relu')(input_)
-  pool = MaxPooling1D(pool_size=2)(conv)
-  flat = Flatten()(pool)
-  net = flat
+  if covnet:
+    conv = Conv1D(2,2,activation='relu')(input_)
+    pool = MaxPooling1D(pool_size=2)(conv)
+    flat = Flatten()(pool)
+    net = flat
+  else:
+    net = input_
   nets.append(net)
 
 x = keras.layers.concatenate(nets)
 x = drop(x)
 x = relu(x, layers=depth,nodes=width)
-x = Dense(1024, activation='relu', kernel_initializer='uniform')(x)
-x = Dense(512, activation='relu', kernel_initializer='uniform')(x)
-x = Dense(256, activation='relu', kernel_initializer='uniform')(x)
-x = Dense(128, activation='relu', kernel_initializer='uniform')(x)
-x = Dense(64, activation='relu', kernel_initializer='uniform')(x)
-x = drop(x)
+#x = Dense(1024, activation='relu', kernel_initializer='uniform')(x)
+#x = Dense(512, activation='relu', kernel_initializer='uniform')(x)
+#x = Dense(256, activation='relu', kernel_initializer='uniform')(x)
+#x = Dense(128, activation='relu', kernel_initializer='uniform')(x)
+#x = Dense(64, activation='relu', kernel_initializer='uniform')(x)
+#x = drop(x)
 #x = drop(Dense(128, activation='relu', kernel_initializer='uniform')(x))
 #x = drop(Dense(256, activation='relu', kernel_initializer='uniform')(x))
 #x = drop(Dense(512, activation='relu', kernel_initializer='uniform')(x))
@@ -139,7 +144,8 @@ def prep_entries(kern_input, input_tensors, perturb):
     input_tensors[n] = np.array(input_tensors[n])
     # if perturb:
       # input_tensors[n] = input_tensors[n] + np.random.randint(-2, high=2, size=input_tensors[n].shape) / np.expand_dims(input_tensors["mwidth"],axis=2)
-    input_tensors[n] = np.expand_dims(input_tensors[n], axis=2)
+    if covnet:
+      input_tensors[n] = np.expand_dims(input_tensors[n], axis=2)
   return kern_input, input_tensors
 
 def add_entry(left,right, mwidth, kernpairs, loutlines, routlines, input_tensors, kern_input):
