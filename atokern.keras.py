@@ -128,7 +128,7 @@ def howmany(font_files):
 
 print("Counting...")
 steps = math.ceil(howmany(training_files) / batch_size) * augmentation
-val_steps = 1 # math.ceil(howmany(validation_files) / batch_size)
+val_steps = math.ceil(howmany(validation_files) / batch_size)
 print(steps," steps")
 class_weights = np.sum(class_weights) / np.array(class_weights)
 print(class_weights)

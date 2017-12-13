@@ -20,7 +20,10 @@ all_pairs = True
 
 input_names = [
 "rightofl", "leftofr",
-# "rightofn", "leftofO"
+"rightofn", "leftofn",
+"rightofo", "leftofo",
+"rightofH", "leftofH",
+"rightofO", "leftofO",
 ]
 regress = False
 threeway = False
