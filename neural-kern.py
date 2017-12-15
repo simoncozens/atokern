@@ -7,7 +7,7 @@ import glob
 import random
 from math import copysign
 from sidebearings import safe_glyphs, loadfont, samples, get_m_width
-from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway
+from settings import augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, covnet
 from auxiliary import hinged_min_error, mse_penalizing_miss
 import keras
 
@@ -18,7 +18,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 # Design the network:
 print("Loading network")
-model = keras.models.load_model("kernmodel.hdf5", custom_objects={'mse_penalizing_miss': mse_penalizing_miss})
+model = keras.models.load_model("kernmodel.hdf5", custom_objects={'hinged_min_error': hinged_min_error, 'mse_penalizing_miss': mse_penalizing_miss})
 
 def bin_to_label3(value, mwidth):
   if value == 0: return "-"
@@ -29,7 +29,7 @@ def bin_to_label(value, mwidth):
   rw = 800
   scale = mwidth/rw
   if value == 0:
-    low = int(-300 * scale); high = int(-150 * scale)
+    low = "-inf"; high = int(-150 * scale)
   if value == 1:
     low = int(-150 * scale); high = int(-100 * scale)
   if value == 2:
@@ -57,7 +57,7 @@ def bin_to_label(value, mwidth):
   if value == 13:
     low = int(-5 * scale); high = int(-0 * scale)
   if value == 14:
-    return 0
+    return "0"
   if value == 15:
     low = int(0 * scale); high = int(5 * scale)
   if value == 16:
@@ -79,8 +79,8 @@ def bin_to_label(value, mwidth):
   if value == 24:
     low = int(45 * scale); high = int(50 * scale)
   if value == 25:
-    low = int(50 * scale); high = int(100 * scale)
-  return int(5 * round(float((low+high)/2)/5))
+    low = int(50 * scale); high = int(inf * scale)
+  return str(low)+" - "+str(high)
 
 if threeway:
   binfunction = bin_to_label3
@@ -136,7 +136,8 @@ def do_a_font(path):
 
   for n in input_names:
     input_tensors[n] = np.array(input_tensors[n])
-    input_tensors[n] = np.expand_dims(input_tensors[n], axis=2)
+    if covnet:
+      input_tensors[n] = np.expand_dims(input_tensors[n], axis=2)
 
   predictions = model.predict(input_tensors)
   loop = 0
