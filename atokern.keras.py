@@ -99,7 +99,7 @@ safe_glyphs = list(safe_glyphs)
 
 class_weights = [1] * kern_bins
 
-def howmany(font_files):
+def howmany(font_files, full=False):
   count = 0
   for path in font_files:
     kerndump = path+".kerndump"
@@ -113,7 +113,7 @@ def howmany(font_files):
           k=binfunction(0)
         class_weights[k]=class_weights[k]+1
     count = count + (len(safe_glyphs) * len(safe_glyphs))
-    if all_pairs:
+    if all_pairs and full:
       for left in kernpairs:
         for right in (set(kernpairs[left])|set(safe_glyphs)):
           if right in kernpairs[left]:
@@ -126,10 +126,11 @@ def howmany(font_files):
   return count
 
 print("Counting...")
-steps = math.ceil(howmany(training_files) / batch_size) * augmentation
+steps = math.ceil(howmany(training_files, full=all_pairs) / batch_size) * augmentation
+val_steps = math.ceil(howmany(validation_files) / batch_size)
 if mirroring:
    steps = steps * 2
-val_steps = math.ceil(howmany(validation_files) / batch_size)
+   val_steps = val_steps * 2
 print(steps," steps")
 print(class_weights)
 print(np.sum(class_weights))
@@ -289,7 +290,8 @@ def generator(font_files, perturb = False, full=False):
                  input_tensors[n] = []
                input_tensors["mwidth"] = []
     kern_input, input_tensors = prep_entries(kern_input, input_tensors, perturb)
-    yield(input_tensors, kern_input)
+    if len(kern_input) > 0:
+       yield(input_tensors, kern_input)
 
 # if regress:
 # class_weight = None
