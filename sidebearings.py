@@ -1,4 +1,3 @@
-import freetype
 import numpy as np
 import pickle
 import os.path
@@ -128,12 +127,6 @@ def loadglyph(face, g):
     return np.array(glyph_to_sb(face, data, which="L")), np.array(glyph_to_sb(face, data, which="R"))
 
 def loadfont(path, kerndump):
-  face = freetype.Face(path)
-  face.set_char_size( 64 * face.units_per_EM )
-  loutlines = dict()
-  routlines = dict()
-  kernpairs = dict()
-  allglyphs = set(safe_glyphs)
 
   def load_kernpairs(file):
     with open(file) as f:
@@ -147,24 +140,33 @@ def loadfont(path, kerndump):
 
   if os.path.isfile(path+".pickle"):
     obj = pickle.load(open(path+".pickle","rb"))
-    loutlines, routlines, kernpairs = obj["loutlines"], obj["routlines"], obj["kerndata"]
+    loutlines, routlines, kernpairs, mwidth = obj["loutlines"], obj["routlines"], obj["kerndata"], obj["mwidth"]
   else:
+    import freetype
+    face = freetype.Face(path)
+    face.set_char_size( 64 * face.units_per_EM )
+    mwidth = get_m_width(path)
+    loutlines = dict()
+    routlines = dict()
+    kernpairs = dict()
+    allglyphs = set(safe_glyphs)
     for l in safe_glyphs:
       kernpairs[l]=dict()
 
     if kerndump:
       load_kernpairs(kerndump)
     for g in allglyphs:
-      # print(g+ " ", end='',flush=True)
+      print(g+ " ", end='',flush=True)
       loutlines[g], routlines[g] = loadglyph(face, g)
     # print("")
-    obj = {"loutlines": loutlines, "routlines": routlines, "kerndata": kernpairs}
+    obj = {"loutlines": loutlines, "routlines": routlines, "kerndata": kernpairs, "mwidth": mwidth}
     if kerndump:
       pickle.dump(obj, open(path+".pickle","wb"))
 
-  return loutlines, routlines, kernpairs
+  return loutlines, routlines, kernpairs, mwidth
 
 def get_m_width(path):
+  import freetype
   face = freetype.Face(path)
   face.set_char_size( 64 * face.units_per_EM )
   n = face.get_name_index("m")
@@ -180,15 +182,16 @@ def get_n_width(path):
                             freetype.FT_LOAD_TARGET_MONO)
   return face.glyph.metrics.horiAdvance / 64
 
+def add_m_width(path):
+  obj = pickle.load(open(path+".pickle","rb"))
+  obj["mwidth"] = get_m_width(path)
+  print(path, obj["mwidth"])
+  pickle.dump(obj, open(path+".pickle","wb"))
 
 if __name__ == '__main__':
   for n in sys.argv[1::]:
-    print(n+": ", end="")
-    loutlines, routlines, kernpairs = loadfont(n, n+".kerndump")
-    def contour_between(left, right):
-      return np.array(routlines[left]) + np.array(routlines[right])
-
-    print("A:", np.array(routlines["A"]))
-    print("V:", np.array(loutlines["V"]))
-    print("AV:", contour_between("A","V"))
-    print("AN:", contour_between("A","N"))
+    # print(n+": ", end="")
+    # loutlines, routlines, kernpairs = loadfont(n, n+".kerndump")
+    # print("A:", np.array(routlines["A"]))
+    # print("V:", np.array(loutlines["V"]))
+    add_m_width(n)

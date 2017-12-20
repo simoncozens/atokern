@@ -17,8 +17,8 @@ from sklearn.utils import class_weight
 import keras
 from keras import backend as K
 import tensorflow as tf
-import freetype
-from sidebearings import safe_glyphs, loadfont, samples, get_m_width
+# import freetype
+from sidebearings import safe_glyphs, loadfont, samples
 from settings import generate, mirroring, covnet, augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, trust_zeros, mu, binfunction, kern_bins, training_files, validation_files, all_pairs, width, depth
 from auxiliary import bigram_frequency, mse_penalizing_miss, create_class_weight, hinged_min_error
 
@@ -103,8 +103,7 @@ def howmany(font_files, full=False):
   count = 0
   for path in font_files:
     kerndump = path+".kerndump"
-    loutlines, routlines, kernpairs = loadfont(path,kerndump)
-    mwidth = get_m_width(path)
+    loutlines, routlines, kernpairs, mwidth = loadfont(path,kerndump)
     for left in safe_glyphs:
       for right in safe_glyphs:
         if right in kernpairs[left]:
@@ -227,8 +226,7 @@ def not_generator(font_files, perturb = False, full=False):
     print(path)
     random.shuffle(safe_glyphs)
     kerndump = path+".kerndump"
-    loutlines, routlines, kernpairs = loadfont(path,kerndump)
-    mwidth = get_m_width(path)
+    loutlines, routlines, kernpairs, mwidth = loadfont(path,kerndump)
 
     for left in safe_glyphs:
       for right in safe_glyphs:
@@ -251,13 +249,12 @@ def generator(font_files, perturb = False, full=False):
     for path in font_files:
       random.shuffle(safe_glyphs)
       kerndump = path+".kerndump"
-      loutlines, routlines, kernpairs = loadfont(path,kerndump)
+      loutlines, routlines, kernpairs, mwidth = loadfont(path,kerndump)
       kern_input = []
       input_tensors = {}
       for n in input_names:
         input_tensors[n] = []
       input_tensors["mwidth"] = []
-      mwidth = get_m_width(path)
 
       for left in safe_glyphs:
         for right in safe_glyphs:
