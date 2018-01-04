@@ -2,15 +2,16 @@ import glob
 
 training_files = glob.glob("kern-dump/*.?tf")
 validation_files = glob.glob("kern-dump/validation/*.?tf")
+output_path = "output/kernmodel.hdf5"
 
 # Hyperparameters. These are all guesses.
-augmentation = 1
+augmentation = 5
 batch_size = 512
 depth = 15
 width = 256
 dropout_rate = 0.2
-init_lr = 1e-3
-lr_decay = 0.2
+init_lr = 1e-4
+lr_decay = 0.5
 mu = 0.3
 # We predicted 0 but it wasn't
 false_negative_penalty = 2
@@ -23,16 +24,16 @@ input_names = [
 "rightofl", "leftofr",
 #"rightofn", "leftofn",
 "rightofo",
-# "leftofo",
+#"leftofo",
 "rightofH", 
-#"leftofH",
+# "leftofH",
 #"rightofO", "leftofO",
 ]
 regress = False
 threeway = False
 trust_zeros = True
 covnet = True
-generate = False
+generate = True
 
 def bin_kern3(value):
   if value < -5/800: return 0

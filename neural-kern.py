@@ -79,7 +79,7 @@ def bin_to_label(value, mwidth):
   if value == 24:
     low = int(45 * scale); high = int(50 * scale)
   if value == 25:
-    low = int(50 * scale); high = int(inf * scale)
+    low = int(50 * scale); high = int(150 * scale)
   return str(low)+" - "+str(high)
 
 if threeway:
@@ -93,9 +93,8 @@ for n in input_names:
 
 # Trains the NN given a font and its associated kern dump
 def do_a_font(path):
-  mwidth = get_m_width(path)
   print("Loading font")
-  loutlines, routlines, _ = loadfont(path, None)
+  loutlines, routlines, _, mwidth = loadfont(path, None)
 
   def leftcontour(letter):
     return np.array(loutlines[letter])/mwidth

@@ -19,8 +19,9 @@ from keras import backend as K
 import tensorflow as tf
 # import freetype
 from sidebearings import safe_glyphs, loadfont, samples
-from settings import generate, mirroring, covnet, augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, trust_zeros, mu, binfunction, kern_bins, training_files, validation_files, all_pairs, width, depth
+from settings import output_path, generate, mirroring, covnet, augmentation, batch_size, dropout_rate, init_lr, lr_decay, input_names, regress, threeway, trust_zeros, mu, binfunction, kern_bins, training_files, validation_files, all_pairs, width, depth
 from auxiliary import bigram_frequency, mse_penalizing_miss, create_class_weight, hinged_min_error
+from SignalHandler import SignalHandler
 
 np.set_printoptions(precision=3, suppress=False)
 
@@ -69,8 +70,8 @@ if regress:
 else:
   kernvalue =  Dense(kern_bins, activation='softmax')(x)
 
-if os.path.exists("kernmodel.hdf5"):
-  model = keras.models.load_model("kernmodel.hdf5", custom_objects={'hinged_min_error': hinged_min_error, 'mse_penalizing_miss': mse_penalizing_miss})
+if os.path.exists(output_path):
+  model = keras.models.load_model(output_path, custom_objects={'hinged_min_error': hinged_min_error, 'mse_penalizing_miss': mse_penalizing_miss})
 else:
   model = Model(inputs=inputs, outputs=[kernvalue])
 
@@ -90,10 +91,15 @@ else:
 
 # Trains the NN given a font and its associated kern dump
 
-checkpointer = keras.callbacks.ModelCheckpoint(filepath='kernmodel.hdf5', verbose=0, save_best_only=True, monitor="val_loss")
-earlystop = keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.001, patience=50, verbose=1, mode='auto')
-reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=lr_decay, patience=5, verbose=1, mode='auto', epsilon=0.0001, cooldown=1, min_lr=0)
-tensorboard = keras.callbacks.TensorBoard(log_dir='./logs', histogram_freq=0, batch_size=batch_size, write_graph=False, write_grads=False, write_images=False, embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None)
+checkpointer = keras.callbacks.ModelCheckpoint(filepath='output/kernmodel-cp-val.hdf5', verbose=0, save_best_only=True, monitor="val_loss")
+checkpointer2 = keras.callbacks.ModelCheckpoint(filepath='output/kernmodel-cp-loss.hdf5', verbose=0, save_best_only=True, monitor="val_loss")
+earlystop = keras.callbacks.EarlyStopping(monitor='loss', min_delta=0.0001, patience=5, verbose=1, mode='auto')
+reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='loss', factor=lr_decay, patience=2, verbose=1, mode='auto', epsilon=0.0001, cooldown=1, min_lr=0)
+tensorboard = keras.callbacks.TensorBoard(log_dir='output/atokern',
+histogram_freq=0, batch_size=batch_size, write_graph=False,
+write_grads=False, write_images=False, embeddings_freq=0,
+embeddings_layer_names=None, embeddings_metadata=None)
+signalhandler = SignalHandler()
 
 safe_glyphs = list(safe_glyphs)
 
@@ -299,14 +305,16 @@ if generate:
 	history = model.fit_generator(generator(training_files, perturb = True, full = True),
 	  steps_per_epoch = steps,
 	  class_weight = class_weights,
-	  epochs=5000, verbose=1, callbacks=[
+	  epochs=600, verbose=1, callbacks=[
 	  earlystop,
 	  checkpointer,
-	  #reduce_lr,
-	  tensorboard
-	],shuffle = True,
+	  checkpointer2,
+	  reduce_lr,
+	  tensorboard,
+      signalhandler
+	],
 	  validation_steps=val_steps,
-	  validation_data=generator(validation_files), initial_epoch=0)
+	  validation_data=generator(validation_files), initial_epoch=2)
 else:
 
 	kern_input, input_tensors = not_generator(training_files, perturb = True, full = True)
@@ -314,13 +322,16 @@ else:
 
 	history = model.fit(input_tensors, kern_input,
 	   class_weight = class_weights,
-	   batch_size=batch_size, epochs=5000, verbose=1, callbacks=[
+	   batch_size=batch_size, epochs=600, verbose=1, callbacks=[
 	    earlystop,
 	    checkpointer,
+	    checkpointer2,
 	    reduce_lr,
-	    tensorboard
+	    tensorboard,
+        signalhandler
 	    ],shuffle = True, validation_data=(val_tensors, val_kern))
 
 	#pyplot.plot(history.history['val_loss'])
 	#pyplot.show()
 
+model.save("output/kernmodel-final.hdf5")
