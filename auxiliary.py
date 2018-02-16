@@ -6,7 +6,7 @@ from itertools import product
 import numpy as np
 import math
 
-from settings import binfunction, kern_bins, false_negative_penalty, false_positive_penalty
+from settings import binfunction, kern_bins, false_negative_penalty, false_positive_penalty, lossfunction
 
 import csv
 bigrams = {}
@@ -27,7 +27,7 @@ def bigram_frequency(l,r):
     w = float(bigrams[l][r])/82801640.0
   except Exception as e:
     return 1
-  return float(w)/82801640.0
+  return w
 
 glyphname_to_ascii = {
    "one":"1", "two":"2", "three":"3", "four":"4", "five":"5", "six":"6",
@@ -58,9 +58,23 @@ def w_categorical_crossentropy(y_true, y_pred, weights):
 
         final_mask += (K.cast(weights[c_t, c_p],K.floatx()) * K.cast(y_pred_max_mat[:, c_p] ,K.floatx())* K.cast(y_true[:, c_t],K.floatx()))
     return K.categorical_crossentropy(y_true, y_pred) * final_mask
-w_array = np.ones((kern_bins,kern_bins))
-w_array[:,binfunction(0)]=false_negative_penalty
-w_array[binfunction(0),:]=false_positive_penalty
-w_array[binfunction(0),binfunction(0)]=1
-mse_penalizing_miss = partial(w_categorical_crossentropy, weights=w_array)
+
+if lossfunction == "new":
+    w = np.ones((kern_bins,kern_bins))
+    middle = math.floor(kern_bins/2)
+    for x in range(0,kern_bins):
+      for y in range(0,kern_bins):
+        w[x][y] = abs(x-y)
+        if (x >= middle and y <= middle) or (x<=middle and y >= middle):
+          w[x][y] = (w[x][y] + 2) * 2
+
+    w[middle][middle] = 0
+    w = w + 1
+    mse_penalizing_miss = partial(w_categorical_crossentropy, weights=w)
+else:
+    w_array = np.ones((kern_bins,kern_bins))
+    w_array[:,binfunction(0)]=false_negative_penalty
+    w_array[binfunction(0),:]=false_positive_penalty
+    w_array[binfunction(0),binfunction(0)]=1
+    mse_penalizing_miss = partial(w_categorical_crossentropy, weights=w_array)
 mse_penalizing_miss.__name__ ='mse_penalizing_miss'
