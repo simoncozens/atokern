@@ -1,37 +1,18 @@
 import glob
+import argparse
+parser = argparse.ArgumentParser()
 
-training_files = glob.glob("kern-dump/o*.?tf")
-training_files.extend(glob.glob("kern-dump/Vol*Reg*tf"))
-
-# In order of complexity:
-training_files.extend(glob.glob("kern-dump/Frut*tf"))
-training_files.extend(glob.glob("kern-dump/Del*tf"))
-training_files.extend(glob.glob("kern-dump/Fon*tf"))
-training_files.extend(glob.glob("kern-dump/Tim*tf"))
-training_files.extend(glob.glob("kern-dump/Ari*tf"))
-training_files.extend(glob.glob("kern-dump/Dej*tf"))
-#training_files.extend(glob.glob("kern-dump/Bem*tf"))
-
-
-#training_files.extend(glob.glob("kern-dump/[CD]*tf"))
-#training_files.extend(glob.glob("kern-dump/F[or]*tf"))
-#training_files.extend(glob.glob("kern-dump/A[CG]*tf"))
-#training_files.extend(glob.glob("kern-dump/manu*tf"))
-#training_files.extend(glob.glob("kern-dump/M*Reg*tf"))
-training_files = list(set(training_files))
-validation_files = glob.glob("kern-dump/validation/o*.?tf")
+training_files = { x.replace(".kerndump","") for x in glob.glob("kern-dump/*.kerndump") }
+validation_files = glob.glob("kern-dump/validation/*.?tf")
 output_path = "output/kernmodel.hdf5"
 
 # Hyperparameters. These are all guesses.
-augmentation = 1
 # 128,3,512,0.2 with a 16/2 conv layer after input and 0.2 L2 reg
 # and new loss function
 # works pretty well but converges very slowly: 64% after 16 epochs 
 # Generalization is great, though.
 
 # Wide and shallow (1024/3/2048/0.08 reg) pretty good, 61% after 4.
-# Deep and narrow no good
-
 # Changing to old loss function goes great guns. 128/3/512/0.2, start
 # lr 1e-5, no L2reg (yet). 73% after 22 epochs, test about 5% behind, no LR drop
 # Can't beat 80% though?
@@ -46,12 +27,29 @@ augmentation = 1
 # 2/4096 is amazeballs but slow. 95% in 5. Generalizatino poor.
 # 3/256 is pretty adequate though; using 64/8 gets to 92% in 10.
 
+parser.add_argument('--batch_size',  nargs='?', type=int, default=1024)
+parser.add_argument('--depth', nargs='?', type=int, default=3)
+parser.add_argument('--width', nargs='?', type=int, default=1024)
+parser.add_argument('--dropout_rate', nargs='?', type=float, default=0.1)
+parser.add_argument('--init_lr', nargs='?', type=float, default=1e-5)
+parser.add_argument('--relu_reg', nargs='?', type=float, default=0.04)
+parser.add_argument('--tri_reg', nargs='?', type=float, default=0.04)
+parser.add_argument('--max_per_font', nargs='?', type=int, default=2000)
+parser.add_argument('--write_batch_performance', action='store_true')
+
+args = parser.parse_args()
+
+augmentation =1
 lossfunction = "old"
-batch_size = 1024
-depth = 2
-width = 4096
-dropout_rate = 0.1
-init_lr = 1e-5
+batch_size = args.batch_size
+depth = args.depth
+width = args.width
+dropout_rate = args.dropout_rate
+init_lr = args.init_lr
+relu_reg = args.relu_reg
+tri_reg = args.tri_reg
+write_batch_performance = args.write_batch_performance
+
 lr_decay = 0.5
 mu = 0.3
 # We predicted 0 but it wasn't
@@ -59,7 +57,8 @@ false_negative_penalty = 1
 # It was 0 but we said it wasn't
 false_positive_penalty = 1
 all_pairs = True
-mirroring = False
+mirroring = True
+max_per_font = args.max_per_font
 
 input_names = [
 "rightofl", "leftofr",
