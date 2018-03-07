@@ -28,6 +28,7 @@ output_path = "output/kernmodel.hdf5"
 # 3/256 is pretty adequate though; using 64/8 gets to 92% in 10.
 
 parser.add_argument('--batch_size',  nargs='?', type=int, default=1024)
+parser.add_argument('--max_epochs',  nargs='?', type=int, default=6000)
 parser.add_argument('--depth', nargs='?', type=int, default=3)
 parser.add_argument('--width', nargs='?', type=int, default=1024)
 parser.add_argument('--dropout_rate', nargs='?', type=float, default=0.1)
@@ -42,6 +43,7 @@ args = parser.parse_args()
 augmentation =1
 lossfunction = "old"
 batch_size = args.batch_size
+max_epochs = args.max_epochs
 depth = args.depth
 width = args.width
 dropout_rate = args.dropout_rate

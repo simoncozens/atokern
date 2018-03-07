@@ -7,7 +7,7 @@ import math
 import string
 import tensorflow as tf
 from sidebearings import safe_glyphs, loadfont, samples
-from settings import output_path, generate, mirroring, covnet, augmentation, batch_size, input_names, regress, threeway, trust_zeros, binfunction, kern_bins, training_files, validation_files, all_pairs, width, depth, max_per_font
+from settings import output_path, generate, mirroring, covnet, augmentation, batch_size, input_names, regress, threeway, trust_zeros, binfunction, kern_bins, training_files, validation_files, all_pairs, width, depth, max_per_font, max_epochs
 from model import model, callback_list
 import keras
 
@@ -219,7 +219,7 @@ if generate:
 	history = model.fit_generator(generator(training_files, perturb = True, full = True),
 	  steps_per_epoch = steps,
 	  class_weight = class_weights,
-	  epochs=6000, verbose=1, callbacks=callback_list,
+	  epochs=max_epochs, verbose=1, callbacks=callback_list,
 	  validation_steps=val_steps,
 	  validation_data=generator(validation_files, full=True))
 else:
@@ -228,7 +228,7 @@ else:
 
 	history = model.fit(input_tensors, kern_input,
 	   class_weight = class_weights,
-	   batch_size=batch_size, epochs=6000, verbose=1, callbacks=callback_list,shuffle = True, validation_data=(val_tensors, val_kern))
+	   batch_size=batch_size, epochs=max_epochs, verbose=1, callbacks=callback_list,shuffle = True, validation_data=(val_tensors, val_kern))
 
 	#pyplot.plot(history.history['val_loss'])
 	#pyplot.show()
