@@ -1,4 +1,5 @@
 import numpy as np
+import freetype
 import pickle
 import os.path
 import sys
@@ -190,8 +191,8 @@ def add_m_width(path):
 
 if __name__ == '__main__':
   for n in sys.argv[1::]:
-    # print(n+": ", end="")
-    # loutlines, routlines, kernpairs = loadfont(n, n+".kerndump")
+    print(n+": ", end="")
+    loutlines, routlines, kernpairs,mwidth = loadfont(n, n+".kerndump")
     # print("A:", np.array(routlines["A"]))
     # print("V:", np.array(loutlines["V"]))
-    add_m_width(n)
+    #add_m_width(n)

@@ -1,25 +1,7 @@
 import glob
 
-training_files = glob.glob("kern-dump/o*.?tf")
-training_files.extend(glob.glob("kern-dump/Vol*Reg*tf"))
-
-# In order of complexity:
-training_files.extend(glob.glob("kern-dump/Frut*tf"))
-training_files.extend(glob.glob("kern-dump/Del*tf"))
-training_files.extend(glob.glob("kern-dump/Fon*tf"))
-training_files.extend(glob.glob("kern-dump/Tim*tf"))
-training_files.extend(glob.glob("kern-dump/Ari*tf"))
-training_files.extend(glob.glob("kern-dump/Dej*tf"))
-#training_files.extend(glob.glob("kern-dump/Bem*tf"))
-
-
-#training_files.extend(glob.glob("kern-dump/[CD]*tf"))
-#training_files.extend(glob.glob("kern-dump/F[or]*tf"))
-#training_files.extend(glob.glob("kern-dump/A[CG]*tf"))
-#training_files.extend(glob.glob("kern-dump/manu*tf"))
-#training_files.extend(glob.glob("kern-dump/M*Reg*tf"))
-training_files = list(set(training_files))
-validation_files = glob.glob("kern-dump/validation/o*.?tf")
+training_files = glob.glob("kern-dump/*.?tf")
+validation_files = glob.glob("kern-dump/validation/*.?tf")
 output_path = "output/kernmodel.hdf5"
 
 # Hyperparameters. These are all guesses.
@@ -30,8 +12,6 @@ augmentation = 1
 # Generalization is great, though.
 
 # Wide and shallow (1024/3/2048/0.08 reg) pretty good, 61% after 4.
-# Deep and narrow no good
-
 # Changing to old loss function goes great guns. 128/3/512/0.2, start
 # lr 1e-5, no L2reg (yet). 73% after 22 epochs, test about 5% behind, no LR drop
 # Can't beat 80% though?
@@ -47,26 +27,28 @@ augmentation = 1
 # 3/256 is pretty adequate though; using 64/8 gets to 92% in 10.
 
 lossfunction = "old"
-batch_size = 1024
-depth = 2
-width = 4096
+batch_size = 32
+depth = 3
+width = 256
 dropout_rate = 0.1
 init_lr = 1e-5
 lr_decay = 0.5
 mu = 0.3
 # We predicted 0 but it wasn't
-false_negative_penalty = 1
+false_negative_penalty = 2
 # It was 0 but we said it wasn't
-false_positive_penalty = 1
-all_pairs = True
+false_positive_penalty = 2
+all_pairs = False # True
 mirroring = False
+max_per_font = 6000
 
 input_names = [
 "rightofl", "leftofr",
 #"rightofn", "leftofn",
 "rightofo",
 #"leftofo",
-"leftofH", 
+"leftofH"
+# "rightofH"
 # "leftofH",
 #"rightofO", "leftofO",
 ]
@@ -117,3 +99,4 @@ else:
   kern_bins = 26
   binfunction = bin_kern
 
+is_bin = 13
