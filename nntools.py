@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Input, Embedding, Dense, Dropout, Flatten, BatchNormalization, Activation, concatenate, Conv2D, MaxPooling2D
+from tensorflow.keras.layers import Input, Embedding, Dense, Dropout, Flatten, BatchNormalization, Activation, concatenate, Conv2D, MaxPooling2D, SpatialDropout2D
 # from tensorflow.keras.layers.noise import GaussianNoise
 from tensorflow.keras.models import Model
 from tensorfont import Font,safe_glyphs_l,safe_glyphs_r,safe_glyphs,GlyphRendering
@@ -7,18 +7,6 @@ import random
 import numpy as np
 
 # NN helpers
-def drop(x): return Dropout(dropout_rate)(x)
-def relu(x, layers=1, nodes=32,name=""):
-  for _ in range(0,layers):
-    x = Dense(nodes, kernel_initializer='he_normal',
-                # kernel_constraint=max_norm(3.),
-                # kernel_regularizer=regularizers.l2(relu_reg),
-                # activity_regularizer=regularizers.l1(relu_reg)
-              )(x)
-    x = BatchNormalization()(x)
-    x = Activation("relu")(x)
-    # x = drop(x)
-  return x
 
 class NetworkTools:
   def __init__(self,
@@ -38,13 +26,14 @@ class NetworkTools:
     self.output_activation = output_activation
     self.training_files = training_files
     self.validation_files = validation_files
+    self.category_count = category_count
     self.left_glyphs = left_glyphs
     self.right_glyphs = right_glyphs
     self.batch_size = batch_size
     if len(self.training_files) < 1 or len(self.validation_files) < 1:
       raise ValueError
     self.generator = self.make_generator(generator,training_files)
-    self.validation_generator = self.make_generator(generator,validation_files)
+    self.validation_generator = self.make_generator(generator,validation_files,validation=True)
 
     self.font_xheight = font_xheight
     self.box_height = box_height
@@ -59,7 +48,20 @@ class NetworkTools:
     self.sniffing = False
     return inputs, out
 
-  def build_network(self, depth=2, width=32, init_lr = 1e-4):
+  def build_network(self, depth=2, width=32, init_lr = 1e-4, dropout_rate = 0.2):
+    def drop(x): return Dropout(dropout_rate)(x)
+    def relu(x, layers=1, nodes=32,name=""):
+      for _ in range(0,layers):
+        x = Dense(nodes, kernel_initializer='he_normal',
+                    # kernel_constraint=max_norm(3.),
+                    # kernel_regularizer=regularizers.l2(relu_reg),
+                    # activity_regularizer=regularizers.l1(relu_reg)
+                  )(x)
+        x = BatchNormalization()(x)
+        x = Activation("relu")(x)
+        x = drop(x)
+      return x
+
     inputs = []
     nets = []
     input_t = {}
@@ -78,13 +80,14 @@ class NetworkTools:
                        activation='relu', kernel_initializer='he_normal',
                        name=n+'_conv1')(input_)
         inner = MaxPooling2D(pool_size=(pool_size, pool_size), name=n+'_max1')(inner)
-        inner = BatchNormalization()(inner)
+        inner = SpatialDropout2D(dropout_rate)(inner)
         inner = Conv2D(conv_filters, kernel_size, padding='same',
                        activation='relu', kernel_initializer='he_normal',
                        name=n+'_conv2')(inner)
-        input_ = MaxPooling2D(pool_size=(pool_size, pool_size), name=n+'_max2')(inner)
-        input_ = BatchNormalization()(input_)
-        input_ = Flatten()(input_)
+        inner = MaxPooling2D(pool_size=(pool_size, pool_size), name=n+'_max2')(inner)
+        inner = SpatialDropout2D(dropout_rate)(inner)
+        # input_ = BatchNormalization()(input_)
+        input_ = Flatten()(inner)
       input_t[n] = input_
 
     nets = [ input_t[n] for n in self.input_names if not "_exclude" in n]
@@ -117,7 +120,7 @@ class NetworkTools:
     model.compile(loss=loss, metrics=metrics, optimizer=opt)
     self.model = model
 
-  def make_generator(self, func, filenames):
+  def make_generator(self, func, filenames,validation=False):
     fontobjects = [ Font(fn,self.font_xheight) for fn in filenames ]
     while True:
       if self.sniffing:
@@ -130,22 +133,23 @@ class NetworkTools:
         f = random.choice(fontobjects)
         l = random.choice(self.left_glyphs)
         r = random.choice(self.right_glyphs)
-        try:
-          x_true, y_true = func(f,l,r)
-          if x_true is None:
-            raise ValueError
-          for n in x_true.keys():
-            if "_image" in n:
+        # try:
+        x_true, y_true = func(f,l,r,validation=validation)
+        if x_true is None:
+          continue
+        for n in x_true.keys():
+          if "_image" in n:
+            if x_true[n].shape[0] != self.box_height or x_true[n].shape[1] != self.box_width:
               x_true[n] = x_true[n].with_padding_to_size(self.box_height,self.box_width)
-              if x_true[n] is None:
-                raise ValueError
-              x_true[n] = x_true[n].reshape((self.box_height,self.box_width,1))
-            if not n in input_tensors:
-              input_tensors[n] = []
-            input_tensors[n].append(x_true[n])
-          outputs.append(y_true)
-        except ValueError:
-          pass
+            if x_true[n] is None:
+              continue
+            x_true[n] = x_true[n].reshape((self.box_height,self.box_width,1))
+          if not n in input_tensors:
+            input_tensors[n] = []
+          input_tensors[n].append(x_true[n])
+        outputs.append(y_true)
+        # except ValueError:
+          # pass
       for k, v in input_tensors.items():
         input_tensors[k] = np.array(v)
       outputs = np.array(outputs)
@@ -160,7 +164,7 @@ class NetworkTools:
     write_images=False)
 
     callback_list = [
-      earlystop,
+      # earlystop,
       checkpointer,
       reduce_lr,
       tensorboard
