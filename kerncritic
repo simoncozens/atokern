@@ -11,8 +11,27 @@ import tensorflow.keras
 import numpy as np
 import argparse
 import string
+from skimage.util import pad
+from tqdm import tqdm
+from termcolor import colored
+import urllib
+
+class DownloadProgressBar(tqdm):
+    def update_to(self, b=1, bsize=1, tsize=None):
+        if tsize is not None:
+            self.total = tsize
+        self.update(b * bsize - self.n)
+
+def download_url(url, output_path):
+    with DownloadProgressBar(unit='B', unit_scale=True,
+                             miniters=1, desc=url.split('/')[-1]) as t:
+        urllib.request.urlretrieve(url, filename=output_path, reporthook=t.update_to)
 
 tf.logging.set_verbosity(tf.logging.ERROR)
+
+if not os.path.exists("badkerndetector.hdf5"):
+  print("Downloading bad kern detection model")
+  download_url("http://dealer.simon-cozens.org/~simon/badkerndetector.hdf5", "badkerndetector.hdf5")
 
 batch_size = 16
 box_height = 160
@@ -44,7 +63,6 @@ args.left = args.left.replace("<lc>", string.ascii_lowercase)
 args.right = args.right.replace("<uc>", string.ascii_uppercase)
 args.right = args.right.replace("<lc>", string.ascii_lowercase)
 
-from skimage.util import pad
 
 print("Loading %s" % args.fontfile)
 f = Font(args.fontfile, font_xheight)
@@ -69,23 +87,15 @@ def get_image(f,left,right):
   img = pad_to_size(f,f.set_string(s,{ (left,right): f.pair_distance(left,right) }))
   return np.clip(img,0,1)
 
-from tqdm import tqdm
-from termcolor import colored
-
 images = []
 pairs = []
-#print("Creating pairs...")
 
-#with tqdm(total=len(args.left)*len(args.right)) as pbar:
 for l in args.left:
   for r in args.right:
     images.append(convmatrix(get_image(f,l,r)))
     pairs.append((l,r))
       #pbar.update(1)
 
-# import matplotlib.pyplot as plt
-# plt.imshow(images[0].reshape((box_height,box_width)))
-# plt.show()
 model = tf.keras.models.load_model("badkerndetector.hdf5")
 
 category,regression = model.predict({"string_image":np.array(images)},batch_size = batch_size, verbose=1)
