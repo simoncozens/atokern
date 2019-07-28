@@ -8,7 +8,8 @@ pos_shift_range = (40,120)
 neg_shift_range = (-120,-40)
 
 from nntools import NetworkTools
-from tensorfont import Font,GlyphRendering
+import tensorflow as tf
+from tensorfont import Font,GlyphRendering,safe_glyphs_l, safe_glyphs_r
 import pickle
 from tqdm import tqdm
 
@@ -35,17 +36,17 @@ def generator(f,l,r,validation=False):
     ytrue = [0,1,0]
   else:
     ytrue = [1,0,0]
-  return xtrue, ytrue
+  return xtrue, {"category": ytrue, "regression": variation}
 
 training_files = glob.glob("fonts/training/*tf")
 validation_files = glob.glob("fonts/validation/*tf")
 
 net = NetworkTools(generator,
-  left_glyphs = string.ascii_uppercase,
-  right_glyphs = string.ascii_uppercase,
+  left_glyphs = list(safe_glyphs_l),
+  right_glyphs = list(safe_glyphs_r),
   net_type = "categorizer",
   category_count = 3,
-  batch_size = 32,
+  batch_size = 256,
   validation_files =  validation_files,
   training_files =  training_files
 )
@@ -77,11 +78,11 @@ def write_data(files,filename,validation=False):
 # write_data(validation_files,"validation",validation=True)
 
 t_inputs = np.load("in-training.npz")
-t_outputs = np.load("out-training.npz")["outputs"]
+t_outputs = np.load("out-training.npz",allow_pickle=True)["outputs"]
 t_indices = []
 
 v_inputs = np.load("in-validation.npz")
-v_outputs = np.load("out-validation.npz")["outputs"]
+v_outputs = np.load("out-validation.npz",allow_pickle=True)["outputs"]
 v_indices = []
 
 def tgenerator(f,l,r,validation=False):
@@ -106,5 +107,7 @@ def vgenerator(f,l,r,validation=False):
 
 net.generator = net.make_generator(tgenerator,[training_files[0]])
 net.validation_generator = net.make_generator(vgenerator,[validation_files[0]])
-net.build_network(init_lr=0.5e-3)
-net.train(steps_per_epoch = int(len(t_outputs) / net.batch_size), validation_steps = int(len(v_outputs) /net.batch_size))
+net.build_network(init_lr=0.5e-3,dropout_rate=0.1)
+
+#net.model = tf.keras.models.load_model("badkerndetector.hdf5")
+net.train(steps_per_epoch = int(len(t_outputs) / (5*net.batch_size)), validation_steps = int(len(v_outputs) /net.batch_size))

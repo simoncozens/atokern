@@ -1,4 +1,5 @@
 import tensorflow as tf
+import math
 from tensorflow.keras.layers import Input, Embedding, Dense, Dropout, Flatten, BatchNormalization, Activation, concatenate, Conv2D, MaxPooling2D, SpatialDropout2D
 # from tensorflow.keras.layers.noise import GaussianNoise
 from tensorflow.keras.models import Model
@@ -18,15 +19,15 @@ class NetworkTools:
     validation_files = None,
     left_glyphs = safe_glyphs_l,
     right_glyphs = safe_glyphs_r,
-    batch_size = 32,
+    batch_size = 16,
     font_xheight = 50,
     box_height = 160,
     box_width = 550):
     self.net_type = net_type
     self.output_activation = output_activation
     self.training_files = training_files
-    self.validation_files = validation_files
     self.category_count = category_count
+    self.validation_files = validation_files
     self.left_glyphs = left_glyphs
     self.right_glyphs = right_glyphs
     self.batch_size = batch_size
@@ -96,28 +97,35 @@ class NetworkTools:
     else:
       concat = concatenate(nets)
 
-    concat = relu(concat, layers=depth,nodes=width)
+    hidden = relu(concat, layers=depth,nodes=width)
+    hidden2 = relu(concat, layers=depth,nodes=width)
     metrics = []
 
     if self.net_type == "discriminator":
-      output = Dense(1, kernel_initializer='normal', activation='sigmoid')(concat)
+      output = Dense(1, kernel_initializer='normal', activation='sigmoid')(hidden)
       loss = "binary_crossentropy"
       metrics.append("accuracy")
     elif self.net_type == "regression":
       loss = "mse"
-      output = Dense(1, kernel_initializer='zeros')(concat)
+      output = Dense(1, kernel_initializer='zeros')(hidden)
       if self.output_activation is not None:
         output = Activation(self.output_activation)(output)
     else: # We're a categorizer
       if self.category_count is None:
         raise ValueError
-      output = Dense(self.category_count, kernel_initializer='normal', activation='softmax')(concat)
+      output = Dense(self.category_count, name="category",kernel_initializer='normal', activation='softmax')(hidden)
       loss = "categorical_crossentropy"
       metrics.append("accuracy")
 
-    model = Model(inputs=inputs, outputs=[output])
+    #  XXX
+    output2 =  Dense(1, kernel_initializer='zeros',name="regression",activation="tanh")(hidden2)
+    model = Model(inputs=inputs, outputs=[output, output2])
     opt = tf.keras.optimizers.Adam(lr=init_lr)
-    model.compile(loss=loss, metrics=metrics, optimizer=opt)
+    model.compile(loss={"category": "categorical_crossentropy",
+                        "regression": "mse"},
+                  metrics={"category": "accuracy"},
+                  loss_weights= {"regression": 10, "category": 1},
+                  optimizer=opt)
     self.model = model
 
   def make_generator(self, func, filenames,validation=False):
@@ -133,26 +141,27 @@ class NetworkTools:
         f = random.choice(fontobjects)
         l = random.choice(self.left_glyphs)
         r = random.choice(self.right_glyphs)
-        # try:
-        x_true, y_true = func(f,l,r,validation=validation)
-        if x_true is None:
-          continue
-        for n in x_true.keys():
-          if "_image" in n:
-            if x_true[n].shape[0] != self.box_height or x_true[n].shape[1] != self.box_width:
-              x_true[n] = x_true[n].with_padding_to_size(self.box_height,self.box_width)
-            if x_true[n] is None:
-              continue
-            x_true[n] = x_true[n].reshape((self.box_height,self.box_width,1))
-          if not n in input_tensors:
-            input_tensors[n] = []
-          input_tensors[n].append(x_true[n])
-        outputs.append(y_true)
-        # except ValueError:
-          # pass
+        try:
+          x_true, y_true = func(f,l,r,validation=validation)
+          if x_true is None:
+            raise ValueError
+          for n in x_true.keys():
+            if "_image" in n:
+              if x_true[n].shape[0] != self.box_height or x_true[n].shape[1] != self.box_width:
+                x_true[n] = x_true[n].with_padding_to_size(self.box_height,self.box_width)
+              if x_true[n] is None:
+                raise ValueError
+              x_true[n] = x_true[n].reshape((self.box_height,self.box_width,1))
+            if not n in input_tensors:
+              input_tensors[n] = []
+            input_tensors[n].append(x_true[n])
+          outputs.append(y_true)
+        except ValueError:
+          pass
       for k, v in input_tensors.items():
         input_tensors[k] = np.array(v)
       outputs = np.array(outputs)
+      outputs = {k: np.array([dic[k] for dic in outputs]) for k in outputs[0]}
       yield(input_tensors, outputs)
 
   def train(self, output_dir=".", epochs=3000, steps_per_epoch = 50, validation_steps = 10,lr_decay=0.5):
@@ -163,11 +172,20 @@ class NetworkTools:
     write_graph=False, write_grads=False,batch_size=self.batch_size,update_freq='batch',
     write_images=False)
 
+    def scheduler(epoch):
+      if epoch < 10:
+        return 0.001
+      else:
+        return float(0.001 * math.exp(0.1 * (10 - epoch)))
+
+    sched = tf.keras.callbacks.LearningRateScheduler(scheduler)
+
     callback_list = [
       # earlystop,
       checkpointer,
       reduce_lr,
-      tensorboard
+      tensorboard,
+      sched
     ]
     self.model.summary()
     print("Training")

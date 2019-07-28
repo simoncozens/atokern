@@ -18,15 +18,25 @@ batch_size = 16
 box_height = 160
 box_width = 550
 font_xheight = 50
+tolerance = 0.7
+
+def tolerance_value(x):
+    x = float(x)
+    if x < 0.0 or x > 1.0:
+        raise argparse.ArgumentTypeError("%r not in range [0.0, 1.0]"%(x,))
+    return x
 
 parser = argparse.ArgumentParser(description='Check for bad kerning pairs.')
 parser.add_argument('fontfile', metavar='font', help='The OTF file to check')
 parser.add_argument('--left', dest='left',
-                    default=string.ascii_lowercase,
-                    help='left glyphs to check. Use "<lc>" for a-z, "<uc>" for A-Z (default: <lc>)')
+                    default=string.ascii_uppercase,
+                    help='left glyphs to check. Use "<lc>" for a-z, "<uc>" for A-Z (default: <uc>)')
 parser.add_argument('--right', dest='right',
-                    default=string.ascii_lowercase,
-                    help='right glyphs to check (default: <lc>)')
+                    default=string.ascii_uppercase,
+                    help='right glyphs to check (default: <uc>)')
+parser.add_argument('--tolerance', dest='tolerance',type=tolerance_value,
+                    default=0.70,
+                    help='confidence required before reporting a pair (default: 0.70)')
 args = parser.parse_args()
 
 args.left = args.left.replace("<uc>", string.ascii_uppercase)
@@ -60,6 +70,8 @@ def get_image(f,left,right):
   return np.clip(img,0,1)
 
 from tqdm import tqdm
+from termcolor import colored
+
 images = []
 pairs = []
 #print("Creating pairs...")
@@ -76,13 +88,13 @@ for l in args.left:
 # plt.show()
 model = tf.keras.models.load_model("badkerndetector.hdf5")
 
-predictions = model.predict({"string_image":np.array(images)},batch_size = batch_size, verbose=1)
+category,regression = model.predict({"string_image":np.array(images)},batch_size = batch_size, verbose=1)
 output = []
-for i,pred in enumerate(predictions):
-  if pred[0] > 0.75 or pred[2] > 0.75:
-    output.append((pairs[i], pred))
-for n in sorted(output,key=lambda p: -p[1][1]):
-  if n[1][0] > 0.5:
-    print("%s%s too tight (confidence %.2f)" % (n[0][0],n[0][1],n[1][0]))
-  if n[1][2] > 0.5:
-    print("%s%s too loose (confidence %.2f)" % (n[0][0],n[0][1],n[1][2]))
+for i,pred in enumerate(zip(category,regression)):
+  c,r = pred
+  if c[0] >= args.tolerance:
+    output.append((pairs[i], colored("tight","red"), c[0],r[0]))
+  if c[2] >= args.tolerance:
+    output.append((pairs[i], colored("loose","green"), c[2],r[0]))
+for n in sorted(output,key=lambda p: -p[2]):
+  print("%s%s too %s (confidence %.2f): adjust by %s units" % (n[0][0],n[0][1],n[1],n[2],colored(int(-n[3]*120),"yellow")))
