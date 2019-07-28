@@ -1,7 +1,7 @@
-Atokern
-=======
+kerncritic
+==========
 
-A neural network for kerning fonts.
+A neural network for kerning fonts. This has gone through a number of experimental designs and phases. The latest version shows a number of word images to a neural network - some of these are well-kerned, others are not - and asks the network to distinguish which are wrong and how to fix them.
 
 ## Getting started
 
@@ -11,40 +11,17 @@ Install the module requirements with `pip`:
 
     pip3 install -r requirements.txt
 
-Now download the latest pretrained model:
+To report on the kerning status of a font:
 
-    wget http://www.simon-cozens.org/downloads/kernmodel.hdf5
+    ./kerncritic myfont.otf
 
-To determine kern pairs for a font:
+By default this will test every uppercase basic Latin (A-Z) against every other uppercase basic Latin. To change the range of pairs checked, use the `--left` and `--right` options. You can use the token `<uc>` as a shortcut for A-Z and the token `<lc>` as a shortcut for a-z. For example: `--right '<uc><lc>0123456789'` will test every uppercase basic Latin against basic Latin letters and numerals.
 
-    python3 neural-kern.py myfont.otf
-
-Currently this only generates kern pairs for alphanumerics (upper and lower case) and some punctuation. To kern other glyphs, edit the `safe_glyphs` array in `neural-kern.py`. It has not been tested on other glyphs, but it ought to work.
-
-## How it works
-
-See http://typedrawers.com/discussion/2428
-
-## Training
-
-The current best version of the neural network model is provided in `kernmodel.hdf5`. The network has been trained on 250 upright Roman fonts, and is achieving around 92% validation accuracy predicting kern pairs. But I'm aware that is probably not enough. I am sure better accuracy could be achieved with a deeper model and more fonts. I don't know whether italics can be kerned with the current model or if you need to train a new model to do that.
-
-To train or tune the network yourself you also need the kerning dump script from Adobe type tools:
-https://github.com/adobe-type-tools/kern-dump
-
-Place a bunch of font files (I figure fairly similar ones should be useful, like grotesque sans) into a directory called `kern-dump`, and dump all their kern pairs:
-
-    for i in kern-dump/*.otf ; python dumpkerning.py  $i
-
-Then run:
-
-    python atokern.py
-
-You can alter some of the network settings, and check the range of files which are being processed, in the `settings.py` file.
+`kerncritic` reports on pairs that it is more than 70% sure are wrong. You can change this with the `--tolerance` option. Use `kerncritic --help` for more.
 
 ## Licence
 
-Copyright 2017 Simon Cozens
+Copyright 2017-2019 Simon Cozens
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
