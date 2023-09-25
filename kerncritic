@@ -10,7 +10,6 @@ import tensorflow.keras
 import numpy as np
 import argparse
 import string
-from skimage.util import pad
 from tqdm import tqdm
 from termcolor import colored
 import urllib
@@ -75,7 +74,7 @@ def pad_to_size(font,l):
   if np.any(np.array(padding) <0):
     print("Font %s produced a string that was too wide/high" % font.filename)
     return None
-  padded = pad(l, padding, "constant")
+  padded = np.pad(l, padding, "constant")
   return padded
 
 def convmatrix(matrix):
